@@ -13,7 +13,7 @@ WORKER_URL = "https://x-harness-worker.workers.dev"
 [[d1_databases]]
 binding = "DB"
 database_name = "x-harness"
-database_id = "PLACEHOLDER_CREATE_WITH_WRANGLER"
+database_id = "0d55bb66-a100-4a4e-b7d2-f271d1d6da14"
 
 [triggers]
 crons = ["*/5 * * * *"]
