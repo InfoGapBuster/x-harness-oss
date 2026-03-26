@@ -44,17 +44,13 @@ async function scheduled(
   _ctx: ExecutionContext,
 ): Promise<void> {
   const dbAccounts = await getXAccounts(env.DB);
-  const tokens = new Set<string>();
-  tokens.add(env.X_ACCESS_TOKEN);
-  for (const account of dbAccounts) {
-    tokens.add(account.access_token);
-  }
 
+  // Only run scheduled jobs for accounts that exist in the DB (token must be registered)
   const jobs: Promise<void>[] = [];
-  for (const token of tokens) {
-    const xClient = new XClient(token);
-    jobs.push(processEngagementGates(env.DB, xClient));
-    jobs.push(processScheduledPosts(env.DB, xClient));
+  for (const account of dbAccounts) {
+    const xClient = new XClient(account.access_token);
+    jobs.push(processEngagementGates(env.DB, xClient, account.id));
+    jobs.push(processScheduledPosts(env.DB, xClient, account.id));
   }
   await Promise.allSettled(jobs);
 }
