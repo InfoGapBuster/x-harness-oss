@@ -32,12 +32,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: allTools 
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const a = args as Record<string, any>;
+  const a = (args ?? {}) as Record<string, any>;
   try {
     let result: any;
     switch (name) {
       case 'create_post':
-        result = await client.post('/api/posts', { xAccountId: a.xAccountId, text: a.text });
+        result = await client.post('/api/posts', {
+          xAccountId: a.xAccountId,
+          text: a.text,
+          ...(a.replyToTweetId ? { replyToTweetId: a.replyToTweetId } : {}),
+          ...(a.quoteTweetId ? { quoteTweetId: a.quoteTweetId } : {}),
+        });
         break;
       case 'delete_post':
         result = await client.del(`/api/posts/${a.tweetId}`);
