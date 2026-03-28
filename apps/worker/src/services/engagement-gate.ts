@@ -1,4 +1,5 @@
 import { XClient, XApiRateLimitError } from '@x-harness/x-sdk';
+import type { XUser, XApiResponse } from '@x-harness/x-sdk';
 import {
   getEngagementGates, getDeliveredUserIds, createDelivery, updateDeliveryStatus,
   upsertFollower,
@@ -36,6 +37,8 @@ async function processOneGate(
     engagedUsers = await xClient.getLikingUsers(gate.post_id);
   } else if (gate.trigger_type === 'repost') {
     engagedUsers = await xClient.getRetweetedBy(gate.post_id);
+  } else if (gate.trigger_type === 'reply') {
+    engagedUsers = await getReplyUsers(xClient, gate);
   } else {
     return;
   }
@@ -92,6 +95,45 @@ async function processOneGate(
       await updateDeliveryStatus(db, delivery.id, 'failed');
     }
   }
+}
+
+async function getReplyUsers(
+  xClient: XClient,
+  gate: DbEngagementGate,
+): Promise<XApiResponse<XUser[]>> {
+  // Search for replies to this conversation, excluding the post author
+  const result = await xClient.searchRecentTweets(`conversation_id:${gate.post_id}`);
+
+  if (!result.data || result.data.length === 0) {
+    return { data: [] };
+  }
+
+  // Extract unique authors from replies, build XUser-compatible objects from expansions
+  const includes = (result as any).includes as { users?: XUser[] } | undefined;
+  const userMap = new Map<string, XUser>();
+  if (includes?.users) {
+    for (const u of includes.users) {
+      userMap.set(u.id, u);
+    }
+  }
+
+  // Deduplicate by author_id, skip the original post author (gate owner)
+  const seen = new Set<string>();
+  const users: XUser[] = [];
+  for (const tweet of result.data) {
+    if (seen.has(tweet.author_id)) continue;
+    seen.add(tweet.author_id);
+
+    const userFromIncludes = userMap.get(tweet.author_id);
+    if (userFromIncludes) {
+      users.push(userFromIncludes);
+    } else {
+      // Fallback: minimal user object (username will be empty, but ID is sufficient for dedup)
+      users.push({ id: tweet.author_id, name: '', username: '' });
+    }
+  }
+
+  return { data: users };
 }
 
 function appendRef(link: string, ref: string): string {
