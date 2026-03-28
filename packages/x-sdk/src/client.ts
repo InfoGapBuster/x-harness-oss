@@ -125,6 +125,20 @@ export class XClient {
     await this.request('DELETE', `/users/${userId}/retweets/${tweetId}`);
   }
 
+  async getFollowing(userId: string, paginationToken?: string): Promise<XApiResponse<XUser[]>> {
+    const params = new URLSearchParams({ max_results: '1000', 'user.fields': 'profile_image_url,public_metrics' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XUser[]>>(`/users/${userId}/following?${params}`);
+  }
+
+  async follow(userId: string, targetUserId: string): Promise<void> {
+    await this.post(`/users/${userId}/following`, { target_user_id: targetUserId });
+  }
+
+  async unfollow(userId: string, targetUserId: string): Promise<void> {
+    await this.request('DELETE', `/users/${userId}/following/${targetUserId}`);
+  }
+
   private async get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
