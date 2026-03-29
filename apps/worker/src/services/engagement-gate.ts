@@ -30,11 +30,14 @@ export async function processEngagementGates(db: D1Database, xClient: XClient, x
 
       // Claim the gate immediately so concurrent cron ticks or manual triggers
       // see a future next_poll_at and skip it while this run is in progress.
-      const claimNextPollAt = calculateNextPollAt(gate);
-      await db
-        .prepare('UPDATE engagement_gates SET next_poll_at = ?, updated_at = ? WHERE id = ?')
-        .bind(claimNextPollAt, new Date().toISOString(), gate.id)
-        .run();
+      // Manual gates skip claiming — they don't auto-schedule.
+      if (gate.polling_strategy !== 'manual') {
+        const claimNextPollAt = calculateNextPollAt(gate);
+        await db
+          .prepare('UPDATE engagement_gates SET next_poll_at = ?, updated_at = ? WHERE id = ?')
+          .bind(claimNextPollAt, new Date().toISOString(), gate.id)
+          .run();
+      }
 
       let pollSucceeded = false;
       try {
@@ -46,9 +49,8 @@ export async function processEngagementGates(db: D1Database, xClient: XClient, x
         }
         console.error(`Error processing gate ${gate.id}:`, pollErr);
       } finally {
-        // Recalculate next_poll_at from actual completion time so the interval
-        // is measured from end-of-run rather than start.
-        const nextPollAt = calculateNextPollAt(gate);
+        // Manual gates should keep next_poll_at null after force-run
+        const nextPollAt = gate.polling_strategy === 'manual' ? null : calculateNextPollAt(gate);
         const now = new Date().toISOString();
         if (pollSucceeded) {
           await db

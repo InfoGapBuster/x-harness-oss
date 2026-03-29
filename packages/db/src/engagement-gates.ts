@@ -98,15 +98,25 @@ export async function updateEngagementGate(db: D1Database, id: string, updates: 
   if (!existing) return null;
   const now = jstNow();
 
+  const newStrategy = updates.pollingStrategy ?? existing.polling_strategy;
+  const strategyChanged = updates.pollingStrategy !== undefined && updates.pollingStrategy !== existing.polling_strategy;
+
   let newExpiresAt = existing.expires_at;
   if (updates.expiresAfterHours !== undefined) {
     newExpiresAt = new Date(Date.now() + updates.expiresAfterHours * 60 * 60_000).toISOString();
+  } else if (strategyChanged) {
+    // Reset expires_at when strategy changes to avoid stale deadlines
+    if (newStrategy === 'hot_window') {
+      newExpiresAt = new Date(Date.now() + 72 * 60 * 60_000).toISOString();
+    } else if (newStrategy === 'manual') {
+      newExpiresAt = null;
+    } else {
+      // constant with no explicit expiry — clear old hot_window deadline
+      newExpiresAt = null;
+    }
   }
 
-  const newStrategy = updates.pollingStrategy ?? existing.polling_strategy;
-
   const isReactivating = updates.isActive === true && !existing.is_active;
-  const strategyChanged = updates.pollingStrategy !== undefined && updates.pollingStrategy !== existing.polling_strategy;
   let newNextPollAt = existing.next_poll_at;
   if (isReactivating || strategyChanged) {
     newNextPollAt = newStrategy === 'manual' ? null : now;
