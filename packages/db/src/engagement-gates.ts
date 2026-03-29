@@ -17,6 +17,10 @@ export interface DbEngagementGate {
   lottery_rate: number;
   lottery_win_template: string | null;
   lottery_lose_template: string | null;
+  polling_strategy: string;
+  expires_at: string | null;
+  next_poll_at: string | null;
+  api_calls_total: number;
   created_at: string;
   updated_at: string;
 }

@@ -35,10 +35,15 @@ CREATE TABLE IF NOT EXISTS engagement_gates (
   lottery_rate INTEGER DEFAULT 100,
   lottery_win_template TEXT,
   lottery_lose_template TEXT,
+  polling_strategy TEXT DEFAULT 'hot_window' CHECK (polling_strategy IN ('hot_window', 'constant', 'manual')),
+  expires_at TEXT,
+  next_poll_at TEXT,
+  api_calls_total INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_engagement_gates_active ON engagement_gates(is_active);
+CREATE INDEX IF NOT EXISTS idx_engagement_gates_next_poll ON engagement_gates(next_poll_at, is_active);
 
 -- Engagement Gate Deliveries (dedup tracking)
 CREATE TABLE IF NOT EXISTS engagement_gate_deliveries (
