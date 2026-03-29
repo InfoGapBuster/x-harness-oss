@@ -28,6 +28,14 @@ export async function processEngagementGates(db: D1Database, xClient: XClient, x
       // Skip if not due for polling yet (unless forced by manual trigger)
       if (!forceRun && !shouldPollNow(gate)) continue;
 
+      // Claim the gate immediately so concurrent cron ticks or manual triggers
+      // see a future next_poll_at and skip it while this run is in progress.
+      const claimNextPollAt = calculateNextPollAt(gate);
+      await db
+        .prepare('UPDATE engagement_gates SET next_poll_at = ?, updated_at = ? WHERE id = ?')
+        .bind(claimNextPollAt, new Date().toISOString(), gate.id)
+        .run();
+
       let pollSucceeded = false;
       try {
         await processOneGate(db, xClient, gate);
@@ -38,8 +46,8 @@ export async function processEngagementGates(db: D1Database, xClient: XClient, x
         }
         console.error(`Error processing gate ${gate.id}:`, pollErr);
       } finally {
-        // Always schedule the next poll after the run completes (success or error),
-        // so next_poll_at reflects elapsed time rather than start time.
+        // Recalculate next_poll_at from actual completion time so the interval
+        // is measured from end-of-run rather than start.
         const nextPollAt = calculateNextPollAt(gate);
         const now = new Date().toISOString();
         if (pollSucceeded) {
