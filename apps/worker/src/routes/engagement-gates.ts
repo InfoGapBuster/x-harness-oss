@@ -21,6 +21,11 @@ function serialize(row: any) {
     lineHarnessApiKey: row.line_harness_api_key,
     lineHarnessTag: row.line_harness_tag,
     lineHarnessScenarioId: row.line_harness_scenario_id,
+    pollingStrategy: row.polling_strategy ?? 'hot_window',
+    expiresAt: row.expires_at,
+    nextPollAt: row.next_poll_at,
+    apiCallsTotal: row.api_calls_total ?? 0,
+    estimatedCost: `$${((row.api_calls_total ?? 0) * 0.005).toFixed(3)}`,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
