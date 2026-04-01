@@ -12,6 +12,7 @@ import { users } from './routes/users.js';
 import { xAccounts } from './routes/x-accounts.js';
 import { processEngagementGates } from './services/engagement-gate.js';
 import { processScheduledPosts } from './services/post-scheduler.js';
+import { EngagementCache } from './services/reply-trigger-cache.js';
 import { stepSequences } from './routes/step-sequences.js';
 import { processStepSequences } from './services/step-processor.js';
 
@@ -59,7 +60,8 @@ async function scheduled(
           accessTokenSecret: account.access_token_secret,
         })
       : new XClient(account.access_token);
-    jobs.push(processEngagementGates(env.DB, xClient, account.id));
+    const cache = new EngagementCache();
+    jobs.push(processEngagementGates(env.DB, xClient, account.id, false, cache));
     jobs.push(processScheduledPosts(env.DB, xClient, account.id));
   }
   await Promise.allSettled(jobs);
