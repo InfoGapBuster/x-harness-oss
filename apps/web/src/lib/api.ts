@@ -47,6 +47,11 @@ export interface EngagementGate {
   lineHarnessUrl: string | null;
   lineHarnessTag: string | null;
   lineHarnessScenarioId: string | null;
+  requireLike: boolean;
+  requireRepost: boolean;
+  requireFollow: boolean;
+  pollingStrategy: string;
+  estimatedCost: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -7,6 +7,9 @@ import Header from '@/components/layout/header'
 const TRIGGER_LABELS: Record<string, string> = {
   like: 'いいね',
   repost: 'リポスト',
+  reply: 'リプライ',
+  follow: 'フォロー',
+  quote: '引用',
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -17,13 +20,16 @@ const STATUS_BADGE: Record<string, string> = {
 
 interface CreateFormState {
   postId: string
-  triggerType: 'like' | 'repost'
+  triggerType: 'like' | 'repost' | 'reply'
   actionType: 'mention_post' | 'dm'
   template: string
   link: string
   lineHarnessTag: string
   lineHarnessScenarioId: string
   xAccountId: string
+  requireLike: boolean
+  requireRepost: boolean
+  requireFollow: boolean
 }
 
 const defaultForm: CreateFormState = {
@@ -35,6 +41,9 @@ const defaultForm: CreateFormState = {
   lineHarnessTag: '',
   lineHarnessScenarioId: '',
   xAccountId: '',
+  requireLike: false,
+  requireRepost: false,
+  requireFollow: false,
 }
 
 interface GateCardProps {
@@ -111,6 +120,13 @@ function GateCard({ gate, onToggleActive, onDelete }: GateCardProps) {
               <span className="text-gray-300">|</span>
               <span>Action: <span className="font-medium text-gray-700">{gate.actionType}</span></span>
             </div>
+            {(gate.requireLike || gate.requireRepost || gate.requireFollow) && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {gate.requireLike && <span className="text-xs bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded">+いいね</span>}
+                {gate.requireRepost && <span className="text-xs bg-green-50 text-green-600 px-1.5 py-0.5 rounded">+RT</span>}
+                {gate.requireFollow && <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">+フォロー</span>}
+              </div>
+            )}
           </div>
           <span
             className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -273,6 +289,9 @@ export default function EngagementGatesPage() {
         lineHarnessTag: form.lineHarnessTag.trim() || null,
         lineHarnessScenarioId: form.lineHarnessScenarioId.trim() || null,
         xAccountId: form.xAccountId.trim() || undefined,
+        requireLike: form.requireLike,
+        requireRepost: form.requireRepost,
+        requireFollow: form.requireFollow,
         isActive: true,
       })
       if (res.success) {
@@ -356,10 +375,11 @@ export default function EngagementGatesPage() {
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 value={form.triggerType}
-                onChange={(e) => setForm({ ...form, triggerType: e.target.value as 'like' | 'repost' })}
+                onChange={(e) => setForm({ ...form, triggerType: e.target.value as 'like' | 'repost' | 'reply' })}
               >
                 <option value="like">いいね (Like)</option>
                 <option value="repost">リポスト (Repost)</option>
+                <option value="reply">リプライ (Reply)</option>
               </select>
             </div>
 
@@ -403,6 +423,27 @@ export default function EngagementGatesPage() {
                 onChange={(e) => setForm({ ...form, link: e.target.value })}
               />
             </div>
+
+            {/* Condition checkboxes for reply trigger */}
+            {form.triggerType === 'reply' && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">追加条件（リプライ + 以下を必須にする）</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={form.requireLike} onChange={(e) => setForm({ ...form, requireLike: e.target.checked })} className="rounded border-gray-300" />
+                    いいね必須
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={form.requireRepost} onChange={(e) => setForm({ ...form, requireRepost: e.target.checked })} className="rounded border-gray-300" />
+                    リポスト必須
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={form.requireFollow} onChange={(e) => setForm({ ...form, requireFollow: e.target.checked })} className="rounded border-gray-300" />
+                    フォロー必須
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* LINE Harness Tag */}
             <div>
