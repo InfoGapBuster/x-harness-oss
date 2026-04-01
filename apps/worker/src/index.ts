@@ -14,6 +14,7 @@ import { processEngagementGates } from './services/engagement-gate.js';
 import { processScheduledPosts } from './services/post-scheduler.js';
 import { EngagementCache } from './services/reply-trigger-cache.js';
 import { stepSequences } from './routes/step-sequences.js';
+import { verify } from './routes/verify.js';
 import { processStepSequences } from './services/step-processor.js';
 
 export type Env = {
@@ -39,6 +40,7 @@ app.route('/', posts);
 app.route('/', users);
 app.route('/', xAccounts);
 app.route('/', stepSequences);
+app.route('/', verify);
 
 app.notFound((c) => c.json({ success: false, error: 'Not found' }, 404));
 
