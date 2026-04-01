@@ -33,6 +33,7 @@ app.use('*', cors({ origin: '*' }));
 app.use('*', authMiddleware);
 
 app.route('/', health);
+app.route('/', verify);
 app.route('/', engagementGates);
 app.route('/', followers);
 app.route('/', tags);
@@ -40,7 +41,6 @@ app.route('/', posts);
 app.route('/', users);
 app.route('/', xAccounts);
 app.route('/', stepSequences);
-app.route('/', verify);
 
 app.notFound((c) => c.json({ success: false, error: 'Not found' }, 404));
 
