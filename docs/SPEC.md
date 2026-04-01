@@ -79,11 +79,17 @@ x-harness-oss/
 ### 1. Engagement Gate（シークレットリプライ）★ MVP最優先
 Xステップの「シークレットリプライ」相当。キラー機能。
 
-**仕組み:**
-1. 監視対象ポストを登録
-2. Cron でいいね/RT/リプライしたユーザーを定期取得
-3. 未配信ユーザーに @メンション付きポストを自動送信
-4. リンク先は LINE Harness の友だち追加URL等
+**仕組み（v2 — リプライトリガー）:**
+1. 監視対象ポストを登録（trigger_type: reply + require_like/repost/follow）
+2. Cron でリプライを `since_id` 差分取得（低コスト）
+3. リプライしたユーザーに対して追加条件（いいね/RT/フォロー）をキャッシュから照合
+4. 全条件クリアしたユーザーに @メンション or DM 自動送信
+5. LINE Harness の verify API で外部からも条件判定可能
+
+**仕組み（v1 — レガシー、後方互換）:**
+1. 監視対象ポストを登録（trigger_type: like/repost）
+2. Cron で liking_users / retweeted_by を全件取得
+3. 未配信ユーザーに自動送信
 
 **テーブル: `engagement_gates`**
 ```sql
@@ -101,6 +107,11 @@ CREATE TABLE engagement_gates (
   line_harness_api_key TEXT,       -- LINE Harness API Key
   line_harness_tag TEXT,           -- 付与するタグ名
   line_harness_scenario_id TEXT,   -- 開始するシナリオID
+  -- リプライトリガー条件
+  require_like INTEGER DEFAULT 0,
+  require_repost INTEGER DEFAULT 0,
+  require_follow INTEGER DEFAULT 0,
+  last_reply_since_id TEXT,
   -- メタ
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -280,6 +291,7 @@ GET    /api/engagement-gates/:id      # 詳細
 PUT    /api/engagement-gates/:id      # 更新
 DELETE /api/engagement-gates/:id      # 削除
 GET    /api/engagement-gates/:id/deliveries  # 配信履歴
+GET    /api/engagement-gates/:id/verify?username=xxx  # LINE Harness 条件判定
 
 # フォロワー
 GET    /api/followers                 # 一覧
@@ -362,12 +374,10 @@ LINE Harness と同じ思想:
 
 | 規模 | 月額コスト |
 |------|-----------|
-| 〜1,000 フォロワー | **$5-20**（X API従量課金のみ） |
-| 〜10,000 フォロワー | $20-50 |
-| 50,000+ | $50-100 + D1有料プラン |
-
-Xステップ月額: 不明（有料SaaS）
-X Harness: **インフラ0円 + API従量課金のみ**
+| リプライトリガー（通常） | **$3-5** |
+| リプライトリガー（バズ時） | $20-45 |
+| レガシーモード（like/repost全件走査） | $86+ |
+| インフラ（CF無料枠） | **$0** |
 
 ## ライセンス
 MIT
