@@ -6,3 +6,5 @@ dist/
 .next/
 out/
 *.tsbuildinfo
+.vercel/
+packages/mcp/dist/

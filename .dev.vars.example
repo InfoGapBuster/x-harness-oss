@@ -1,0 +1,6 @@
+# X Harness Worker — Environment Variables
+# Copy this file to .dev.vars and fill in your values
+
+API_KEY=your-api-key-here
+X_ACCESS_TOKEN=your-x-access-token
+X_REFRESH_TOKEN=your-x-refresh-token
