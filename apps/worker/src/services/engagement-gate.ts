@@ -215,6 +215,20 @@ async function processReplyTriggerGate(
     const delivery = await createDelivery(db, gate.id, user.id, user.username, null, 'pending');
 
     try {
+      // Lottery check (same as legacy path)
+      if (gate.lottery_enabled) {
+        const won = Math.random() * 100 < gate.lottery_rate;
+        if (!won) {
+          if (gate.lottery_lose_template) {
+            const loseText = varyTemplate(gate.lottery_lose_template.replace('{username}', user.username));
+            await xClient.createTweet({ text: `@${user.username} ${loseText}` });
+          }
+          await updateDeliveryStatus(db, delivery.id, 'delivered');
+          incrementRateLimit(gate.x_account_id);
+          continue;
+        }
+      }
+
       const winTemplate = (gate.lottery_enabled && gate.lottery_win_template) ? gate.lottery_win_template : gate.template;
       let text = varyTemplate(winTemplate.replace('{username}', user.username));
       if (gate.link) {
