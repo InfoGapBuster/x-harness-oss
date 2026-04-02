@@ -85,14 +85,10 @@ async function processOneGate(
   gate: DbEngagementGate,
   cache: EngagementCache,
 ): Promise<void> {
-  // verify_only: detect and record eligible users, but don't send any messages.
-  // Eligibility is checked via the /verify API endpoint.
-  if (gate.action_type === 'verify_only') {
-    if (gate.trigger_type === 'reply' && (gate.require_like || gate.require_repost || gate.require_follow)) {
-      await processVerifyOnlyGate(db, xClient, gate, cache);
-    }
-    return;
-  }
+  // verify_only: no cron processing needed — eligibility is checked on-demand
+  // via the /verify API endpoint when user submits the LIFF form.
+  // Skipping cron saves X API costs (no polling at all).
+  if (gate.action_type === 'verify_only') return;
 
   // Reply-trigger mode: reply is the trigger, like/repost/follow are verification conditions
   if (gate.trigger_type === 'reply' && (gate.require_like || gate.require_repost || gate.require_follow)) {
