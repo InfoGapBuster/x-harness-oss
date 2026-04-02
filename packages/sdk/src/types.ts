@@ -26,6 +26,12 @@ export interface EngagementGate {
   actionType: string;
   template: string;
   link: string | null;
+  requireLike: boolean;
+  requireRepost: boolean;
+  requireFollow: boolean;
+  replyKeyword: string | null;
+  pollingStrategy: string;
+  estimatedCost: string;
   isActive: boolean;
   lineHarnessUrl: string | null;
   lineHarnessApiKey: string | null;
@@ -99,6 +105,10 @@ export interface CreateGateInput {
   actionType: string;
   template: string;
   link?: string;
+  requireLike?: boolean;
+  requireRepost?: boolean;
+  requireFollow?: boolean;
+  replyKeyword?: string;
   lineHarnessUrl?: string;
   lineHarnessApiKey?: string;
   lineHarnessTag?: string;

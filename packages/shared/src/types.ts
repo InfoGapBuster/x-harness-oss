@@ -15,7 +15,7 @@ export interface PaginatedData<T> {
 
 // Engagement Gate types
 export type TriggerType = 'like' | 'repost' | 'reply' | 'follow';
-export type ActionType = 'mention_post' | 'dm';
+export type ActionType = 'mention_post' | 'dm' | 'verify_only';
 export type DeliveryStatus = 'delivered' | 'failed' | 'pending';
 export type PostStatus = 'scheduled' | 'posted' | 'failed';
 
@@ -27,6 +27,12 @@ export interface EngagementGate {
   actionType: ActionType;
   template: string;
   link: string | null;
+  requireLike: boolean;
+  requireRepost: boolean;
+  requireFollow: boolean;
+  replyKeyword: string | null;
+  pollingStrategy: string;
+  estimatedCost: string;
   isActive: boolean;
   lineHarnessUrl: string | null;
   lineHarnessApiKey: string | null;
