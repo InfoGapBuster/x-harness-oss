@@ -1,6 +1,13 @@
 import { Hono } from 'hono';
-import { getFollowers, getFollowerById, getFollowerCount, addTagToFollower, removeTagFromFollower, getFollowerTags, getTagById } from '@x-harness/db';
+import { getFollowers, getFollowerById, getFollowerCount, addTagToFollower, removeTagFromFollower, getFollowerTags, getTagById, getXAccounts } from '@x-harness/db';
 import type { Env } from '../index.js';
+
+interface FollowerSearchResult {
+  id: string;
+  username: string;
+  displayName: string;
+  profileImageUrl: string | null;
+}
 
 const followers = new Hono<Env>();
 
@@ -24,6 +31,82 @@ function serialize(row: any) {
     updatedAt: row.updated_at,
   };
 }
+
+// Public live user search endpoint — calls X API directly (called from LIFF browser)
+followers.get('/api/users/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  const limit = Math.min(Number(c.req.query('limit') ?? '5'), 20);
+
+  if (!q) {
+    return c.json({ success: true, data: [] as FollowerSearchResult[] });
+  }
+
+  try {
+    const { XClient } = await import('@x-harness/x-sdk');
+    const accounts = await getXAccounts(c.env.DB);
+    const account = accounts[0] ?? null;
+    if (!account) {
+      return c.json({ success: true, data: [] as FollowerSearchResult[] });
+    }
+
+    const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+      ? new XClient({
+          type: 'oauth1',
+          consumerKey: account.consumer_key,
+          consumerSecret: account.consumer_secret,
+          accessToken: account.access_token,
+          accessTokenSecret: account.access_token_secret,
+        })
+      : new XClient(account.access_token);
+
+    const result = await xClient.searchUsers(q);
+    const users = (result.data ?? []).slice(0, limit);
+
+    const data: FollowerSearchResult[] = users.map((u: any) => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.name,
+      profileImageUrl: u.profile_image_url ?? null,
+    }));
+
+    return c.json({ success: true, data });
+  } catch {
+    // Graceful degradation — return empty on X API error
+    return c.json({ success: true, data: [] as FollowerSearchResult[] });
+  }
+});
+
+// Public search endpoint — no auth required (called from LIFF browser)
+followers.get('/api/followers/search', async (c) => {
+  const q = (c.req.query('q') ?? '').trim();
+  const limit = Math.min(Number(c.req.query('limit') ?? '5'), 20);
+
+  if (!q) {
+    return c.json({ success: true, data: [] as FollowerSearchResult[] });
+  }
+
+  const pattern = `%${q}%`;
+  const result = await c.env.DB.prepare(
+    `SELECT x_user_id, username, display_name, profile_image_url
+     FROM followers
+     WHERE (username LIKE ? OR display_name LIKE ?)
+     ORDER BY
+       CASE WHEN username LIKE ? THEN 0 ELSE 1 END,
+       username ASC
+     LIMIT ?`,
+  )
+    .bind(pattern, pattern, `${q}%`, limit)
+    .all<{ x_user_id: string; username: string; display_name: string; profile_image_url: string | null }>();
+
+  const data: FollowerSearchResult[] = (result.results ?? []).map((r) => ({
+    id: r.x_user_id,
+    username: r.username,
+    displayName: r.display_name,
+    profileImageUrl: r.profile_image_url,
+  }));
+
+  return c.json({ success: true, data });
+});
 
 followers.get('/api/followers', async (c) => {
   const limit = Number(c.req.query('limit') ?? '50');

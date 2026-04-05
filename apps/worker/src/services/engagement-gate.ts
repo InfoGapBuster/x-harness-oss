@@ -2,7 +2,7 @@ import { XClient, XApiRateLimitError } from '@x-harness/x-sdk';
 import type { XUser, XApiResponse } from '@x-harness/x-sdk';
 import {
   getEngagementGates, getDeliveredUserIds, createDelivery, updateDeliveryStatus,
-  upsertFollower, updateEngagementGate, updateGateSinceId,
+  upsertFollower, updateEngagementGate, updateGateSinceId, incrementApiUsage,
 } from '@x-harness/db';
 import type { DbEngagementGate } from '@x-harness/db';
 import { addJitter, varyTemplate, checkRateLimit, incrementRateLimit } from './stealth.js';
@@ -62,6 +62,7 @@ export async function processEngagementGates(
             .prepare('UPDATE engagement_gates SET next_poll_at = ?, api_calls_total = api_calls_total + 1, updated_at = ? WHERE id = ?')
             .bind(nextPollAt, now, gate.id)
             .run();
+          await incrementApiUsage(db, gate.x_account_id, 'engagement_gate_poll').catch(() => {});
         } else {
           await db
             .prepare('UPDATE engagement_gates SET next_poll_at = ?, updated_at = ? WHERE id = ?')

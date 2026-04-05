@@ -169,3 +169,43 @@ CREATE TABLE IF NOT EXISTS step_enrollments (
   UNIQUE(sequence_id, x_user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_step_enrollments_next_run ON step_enrollments(next_run_at, status);
+
+-- Follower Snapshots (daily tracking)
+CREATE TABLE IF NOT EXISTS follower_snapshots (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  followers_count INTEGER NOT NULL,
+  following_count INTEGER NOT NULL,
+  tweet_count INTEGER NOT NULL DEFAULT 0,
+  recorded_at TEXT NOT NULL,
+  FOREIGN KEY (x_account_id) REFERENCES x_accounts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_follower_snapshots_account_date ON follower_snapshots(x_account_id, recorded_at);
+
+-- Quote Tweets (persisted — X API only keeps 7 days)
+CREATE TABLE IF NOT EXISTS quote_tweets (
+  id TEXT PRIMARY KEY,
+  source_tweet_id TEXT NOT NULL,
+  x_account_id TEXT NOT NULL,
+  author_id TEXT NOT NULL,
+  author_username TEXT,
+  author_display_name TEXT,
+  author_profile_image_url TEXT,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  discovered_at TEXT NOT NULL,
+  FOREIGN KEY (x_account_id) REFERENCES x_accounts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_quote_tweets_source ON quote_tweets(source_tweet_id);
+CREATE INDEX IF NOT EXISTS idx_quote_tweets_account ON quote_tweets(x_account_id, discovered_at DESC);
+
+-- Engagement Actions (persist like/repost/reply from dashboard)
+CREATE TABLE IF NOT EXISTS engagement_actions (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  tweet_id TEXT NOT NULL,
+  action_type TEXT NOT NULL CHECK (action_type IN ('like', 'repost', 'reply')),
+  created_at TEXT NOT NULL,
+  UNIQUE(x_account_id, tweet_id, action_type)
+);
+CREATE INDEX IF NOT EXISTS idx_engagement_actions_account ON engagement_actions(x_account_id);

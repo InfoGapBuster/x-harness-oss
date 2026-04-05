@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { Follower, Tag } from '@/lib/api'
+import type { Follower, Tag, AccountStats, FollowerSnapshot } from '@/lib/api'
 import Header from '@/components/layout/header'
+import { useCurrentAccountId } from '@/hooks/use-selected-account'
 
 const PAGE_SIZE = 20
 
@@ -257,7 +258,44 @@ function FollowerRow({
   )
 }
 
+function FollowerLineChart({ data }: { data: FollowerSnapshot[] }) {
+  if (data.length === 0) return null
+  const values = data.map((d) => d.followersCount)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  return (
+    <div className="flex items-end gap-[2px] h-8">
+      {data.map((d, i) => {
+        const pct = ((d.followersCount - min) / range) * 100
+        const height = Math.max(pct, 4)
+        return (
+          <div
+            key={i}
+            className="flex-1 rounded-t min-w-[1px] max-w-[4px] transition-opacity hover:opacity-100"
+            style={{ height: `${height}%`, backgroundColor: '#c7d2fe', opacity: 0.6 }}
+            title={`${d.recordedAt}: ${d.followersCount.toLocaleString('ja-JP')}`}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function GrowthBadge({ value, label }: { value: number | null; label: string }) {
+  if (value === null || value === undefined) return null
+  const color = value >= 0 ? 'text-green-600' : 'text-red-600'
+  const prefix = value >= 0 ? '+' : ''
+  return (
+    <span>
+      <span className="text-gray-400">{label}</span>{' '}
+      <span className={`font-semibold ${color}`}>{prefix}{value.toLocaleString('ja-JP')}</span>
+    </span>
+  )
+}
+
 export default function FollowersPage() {
+  const selectedAccountId = useCurrentAccountId()
   const [followers, setFollowers] = useState<Follower[]>([])
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [total, setTotal] = useState(0)
@@ -266,6 +304,7 @@ export default function FollowersPage() {
   const [selectedTagId, setSelectedTagId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [accountStats, setAccountStats] = useState<AccountStats | null>(null)
 
   const loadTags = useCallback(async () => {
     try {
@@ -284,6 +323,7 @@ export default function FollowersPage() {
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
         tagId: selectedTagId || undefined,
+        xAccountId: selectedAccountId || undefined,
       })
       if (res.success) {
         setFollowers(res.data.items)
@@ -297,7 +337,7 @@ export default function FollowersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, selectedTagId])
+  }, [page, selectedTagId, selectedAccountId])
 
   useEffect(() => {
     loadTags()
@@ -311,17 +351,47 @@ export default function FollowersPage() {
     loadFollowers()
   }, [loadFollowers])
 
+  useEffect(() => {
+    if (!selectedAccountId) return
+    let cancelled = false
+    async function loadStats() {
+      try {
+        const res = await api.accounts.stats(selectedAccountId)
+        if (!cancelled && res.success) setAccountStats(res.data)
+      } catch { /* non-blocking */ }
+    }
+    loadStats()
+    return () => { cancelled = true }
+  }, [selectedAccountId])
+
   return (
     <div>
       <Header
         title="Followers"
-        description="フォロワーの管理とタグ付け"
+        description="エンゲージメントゲート通過者の管理。Xフォロワー数の推移はダッシュボードで確認できます。"
         action={
           <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-blue-100 text-blue-700">
             {total.toLocaleString('ja-JP')} 人
           </span>
         }
       />
+
+      {/* Account follower stats - compact */}
+      {accountStats?.current && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-5 py-3 mb-4 flex items-center gap-6">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold text-gray-900">{accountStats.current.followersCount.toLocaleString('ja-JP')}</span>
+            <span className="text-xs text-gray-400">フォロワー</span>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <GrowthBadge value={accountStats.growth.days7} label="7d" />
+            <GrowthBadge value={accountStats.growth.days30} label="30d" />
+          </div>
+          <div className="flex-1 max-w-[200px] ml-auto">
+            <FollowerLineChart data={accountStats.history} />
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 mb-4">

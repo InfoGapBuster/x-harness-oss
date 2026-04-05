@@ -37,13 +37,17 @@ export class XClient {
   }
 
   async getQuoteTweets(tweetId: string, paginationToken?: string): Promise<XApiResponse<XTweetSearchResult[]>> {
-    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at', 'user.fields': 'profile_image_url,public_metrics', expansions: 'author_id', max_results: '100' });
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', 'user.fields': 'profile_image_url,public_metrics', expansions: 'author_id', max_results: '100' });
     if (paginationToken) params.set('pagination_token', paginationToken);
     return this.get<XApiResponse<XTweetSearchResult[]>>(`/tweets/${tweetId}/quote_tweets?${params}`);
   }
 
-  async getUserTweets(userId: string, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
-    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', max_results: '100' });
+  async getUserTweets(userId: string, maxResults = 100, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
+    const params = new URLSearchParams({
+      'tweet.fields': 'author_id,created_at,public_metrics,referenced_tweets',
+      expansions: 'referenced_tweets.id',
+      max_results: String(maxResults),
+    });
     if (paginationToken) params.set('pagination_token', paginationToken);
     return this.get<XApiResponse<XTweetWithMetrics[]>>(`/users/${userId}/tweets?${params}`);
   }
@@ -74,9 +78,9 @@ export class XClient {
   async searchRecentTweets(query: string, sinceId?: string, paginationToken?: string): Promise<XApiResponse<XTweetSearchResult[]>> {
     const params = new URLSearchParams({
       query,
-      'tweet.fields': 'author_id,created_at,in_reply_to_user_id',
+      'tweet.fields': 'author_id,created_at,in_reply_to_user_id,referenced_tweets',
       'user.fields': 'profile_image_url,public_metrics',
-      expansions: 'author_id',
+      expansions: 'author_id,referenced_tweets.id',
       max_results: '100',
     });
     if (sinceId) params.set('since_id', sinceId);
@@ -89,9 +93,84 @@ export class XClient {
     return res.data;
   }
 
+  async getMeWithSubscription(): Promise<XUser & { subscription_type?: string; verified_type?: string }> {
+    const res = await this.get<{ data: XUser & { subscription_type?: string; verified_type?: string } }>(
+      '/users/me?user.fields=profile_image_url,public_metrics,subscription_type,verified_type'
+    );
+    return res.data;
+  }
+
+  /**
+   * Perform an authenticated raw fetch (used for multipart/form-data requests such as media upload).
+   * For OAuth1 accounts, builds an OAuth1 Authorization header over the base URL + method only
+   * (no body params included in signature, which matches X API media upload requirements).
+   * For bearer-token accounts, attaches the Bearer token.
+   */
+  async fetchRaw(url: string, init: RequestInit): Promise<Response> {
+    const headers = new Headers(init.headers as Record<string, string> | undefined);
+    if (this.config.type === 'oauth1') {
+      const authHeader = await buildOAuth1Header(
+        (init.method ?? 'GET').toUpperCase(),
+        url,
+        this.config as OAuth1Config,
+      );
+      headers.set('Authorization', authHeader);
+    } else {
+      headers.set('Authorization', `Bearer ${this.config.token}`);
+    }
+    return fetch(url, { ...init, headers });
+  }
+
+  /**
+   * Upload media to X API v2.
+   * Supports bearer-token and OAuth1 accounts.
+   * @param mediaData  Raw file bytes
+   * @param mediaType  MIME type (e.g. "image/jpeg", "video/mp4")
+   * @param mediaCategory  tweet_image | tweet_gif | tweet_video (default: tweet_image)
+   * @returns media_id string to pass in tweet media_ids
+   */
+  async uploadMedia(mediaData: ArrayBuffer, mediaType: string, mediaCategory: string = 'tweet_image'): Promise<string> {
+    const url = 'https://api.x.com/2/media/upload';
+    const formData = new FormData();
+    formData.append('media', new Blob([mediaData], { type: mediaType }));
+    formData.append('media_category', mediaCategory);
+
+    const res = await this.fetchRaw(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (res.status === 429) {
+      const resetAt = res.headers.get('x-rate-limit-reset');
+      throw new XApiRateLimitError(resetAt ? Number(resetAt) : undefined);
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new XApiError(`Media upload failed: ${res.status} ${text}`, res.status);
+    }
+
+    const raw = await res.text();
+    let data: Record<string, unknown>;
+    try { data = JSON.parse(raw); } catch { throw new XApiError(`Media upload: invalid JSON: ${raw.slice(0, 200)}`, 200); }
+    // X API v2 may return { data: { id, media_key } } or { id, media_key } or { media_id_string }
+    const inner = (data.data as Record<string, unknown> | undefined) ?? data;
+    const mediaId = (inner.id ?? inner.media_key ?? inner.media_id_string ?? inner.media_id) as string | undefined;
+    if (!mediaId) {
+      throw new XApiError(`Media upload: no id in response: ${raw.slice(0, 300)}`, 200);
+    }
+    return mediaId;
+  }
+
   async getUserById(userId: string): Promise<XUser> {
     const res = await this.get<{ data: XUser }>(`/users/${userId}?user.fields=profile_image_url,public_metrics`);
     return res.data;
+  }
+
+  async getUsersByIds(userIds: string[]): Promise<XUser[]> {
+    if (userIds.length === 0) return [];
+    const res = await this.get<{ data: XUser[] }>(`/users?ids=${userIds.join(',')}&user.fields=profile_image_url,public_metrics`);
+    return res.data ?? [];
   }
 
   async getUserByUsername(username: string): Promise<XUser> {

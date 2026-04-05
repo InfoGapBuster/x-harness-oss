@@ -119,4 +119,79 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
   return c.json({ success: true, data: response });
 });
 
+// GET /api/engagement-gates/:id/repliers — list users who replied (for form dropdown)
+verify.get('/api/engagement-gates/:id/repliers', async (c) => {
+  const gateId = c.req.param('id');
+
+  const gate = await getEngagementGateById(c.env.DB, gateId);
+  if (!gate) {
+    return c.json({ success: false, error: 'Gate not found' }, 404);
+  }
+
+  if (!gate.is_active) {
+    return c.json({ success: false, error: 'This gate is no longer active' }, 400);
+  }
+
+  if (gate.trigger_type !== 'reply') {
+    return c.json({ success: false, error: 'Only supported for reply-trigger gates' }, 400);
+  }
+
+  // Build XClient
+  const accounts = await getXAccounts(c.env.DB);
+  const account = accounts.find((a) => a.id === gate.x_account_id);
+  if (!account) {
+    return c.json({ success: false, error: 'X account not found' }, 500);
+  }
+
+  const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+    ? new XClient({
+        type: 'oauth1',
+        consumerKey: account.consumer_key,
+        consumerSecret: account.consumer_secret,
+        accessToken: account.access_token,
+        accessTokenSecret: account.access_token_secret,
+      })
+    : new XClient(account.access_token);
+
+  // Fetch reply users
+  try {
+    const keyword = gate.reply_keyword ? ` "${gate.reply_keyword}"` : '';
+    const result = await xClient.searchRecentTweets(
+      `conversation_id:${gate.post_id} is:reply${keyword}`,
+    );
+
+    if (!result.data || result.data.length === 0) {
+      return c.json({ success: true, data: [] });
+    }
+
+    const includes = (result as any).includes as { users?: any[] } | undefined;
+    const userMap = new Map<string, any>();
+    if (includes?.users) {
+      for (const u of includes.users) userMap.set(u.id, u);
+    }
+
+    const seen = new Set<string>();
+    const repliers: { username: string; displayName: string; profileImageUrl: string | null }[] = [];
+
+    for (const tweet of result.data) {
+      if (seen.has(tweet.author_id)) continue;
+      seen.add(tweet.author_id);
+
+      const u = userMap.get(tweet.author_id);
+      if (u) {
+        repliers.push({
+          username: u.username,
+          displayName: u.name,
+          profileImageUrl: u.profile_image_url || null,
+        });
+      }
+    }
+
+    return c.json({ success: true, data: repliers });
+  } catch (err) {
+    console.error('GET repliers error:', err);
+    return c.json({ success: false, error: 'Failed to fetch repliers' }, 500);
+  }
+});
+
 export { verify };

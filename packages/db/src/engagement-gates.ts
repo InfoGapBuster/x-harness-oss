@@ -90,10 +90,20 @@ export async function createEngagementGate(db: D1Database, input: CreateGateInpu
   return result!;
 }
 
-export async function getEngagementGates(db: D1Database, opts: { activeOnly?: boolean } = {}): Promise<DbEngagementGate[]> {
-  const where = opts.activeOnly ? 'WHERE is_active = 1' : '';
+export async function getEngagementGates(db: D1Database, opts: { activeOnly?: boolean; xAccountId?: string } = {}): Promise<DbEngagementGate[]> {
+  const conditions: string[] = [];
+  const bindings: string[] = [];
+  if (opts.activeOnly) {
+    conditions.push('is_active = 1');
+  }
+  if (opts.xAccountId) {
+    conditions.push('x_account_id = ?');
+    bindings.push(opts.xAccountId);
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const result = await db
     .prepare(`SELECT * FROM engagement_gates ${where} ORDER BY created_at DESC`)
+    .bind(...bindings)
     .all<DbEngagementGate>();
   return result.results;
 }

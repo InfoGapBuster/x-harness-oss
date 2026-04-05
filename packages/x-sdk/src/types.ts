@@ -8,6 +8,8 @@ export interface XUser {
     following_count: number;
     tweet_count: number;
   };
+  subscription_type?: 'Basic' | 'Premium' | 'PremiumPlus' | 'None';
+  verified_type?: 'blue' | 'government' | 'business' | 'none';
 }
 
 export interface XTweet {
@@ -36,6 +38,7 @@ export interface CreateTweetParams {
   text: string;
   media?: { media_ids: string[] };
   reply?: { in_reply_to_tweet_id: string };
+  quote_tweet_id?: string;
 }
 
 export type XClientConfig =

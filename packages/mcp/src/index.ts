@@ -10,6 +10,9 @@ import { dmToolDefs } from './tools/dm.js';
 import { gateToolDefs } from './tools/gates.js';
 import { stepToolDefs } from './tools/steps.js';
 import { analyticsToolDefs } from './tools/analytics.js';
+import { staffToolDefs } from './tools/staff.js';
+import { campaignToolDefs } from './tools/campaign.js';
+import { usageToolDefs } from './tools/usage.js';
 
 const API_URL = process.env.X_HARNESS_API_URL ?? 'http://localhost:8787';
 const API_KEY = process.env.X_HARNESS_API_KEY ?? '';
@@ -24,6 +27,9 @@ const allTools = [
   ...gateToolDefs,
   ...stepToolDefs,
   ...analyticsToolDefs,
+  ...staffToolDefs,
+  ...campaignToolDefs,
+  ...usageToolDefs,
 ];
 
 const server = new Server({ name: 'x-harness', version: '0.1.0' }, { capabilities: { tools: {} } });
@@ -42,6 +48,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: a.text,
           ...(a.replyToTweetId ? { replyToTweetId: a.replyToTweetId } : {}),
           ...(a.quoteTweetId ? { quoteTweetId: a.quoteTweetId } : {}),
+          ...(a.mediaIds ? { mediaIds: a.mediaIds } : {}),
+        });
+        break;
+      case 'create_thread':
+        result = await client.post('/api/posts/thread', { xAccountId: a.xAccountId, texts: a.texts });
+        break;
+      case 'get_post_history':
+        result = await client.get(`/api/posts/history?xAccountId=${encodeURIComponent(a.xAccountId)}${a.limit ? `&limit=${a.limit}` : ''}`);
+        break;
+      case 'get_mentions':
+        result = await client.get(`/api/posts/mentions?xAccountId=${encodeURIComponent(a.xAccountId)}${a.sinceId ? `&sinceId=${encodeURIComponent(a.sinceId)}` : ''}`);
+        break;
+      case 'reply_to_post':
+        result = await client.post(`/api/posts/${a.tweetId}/reply`, {
+          xAccountId: a.xAccountId,
+          text: a.text,
         });
         break;
       case 'delete_post':
@@ -79,7 +101,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         result = await client.get(`/api/followers/following?xAccountId=${a.xAccountId}`);
         break;
       case 'send_dm':
-        result = await client.post('/api/dm/send', a);
+        result = await client.post('/api/dm/send', {
+          xAccountId: a.xAccountId,
+          participantId: a.participantId,
+          text: a.text,
+        });
+        break;
+      case 'get_dm_conversations':
+        result = await client.get(`/api/dm/conversations${a.xAccountId ? `?xAccountId=${encodeURIComponent(a.xAccountId)}` : ''}`);
+        break;
+      case 'get_dm_messages':
+        result = await client.get(`/api/dm/conversations/${encodeURIComponent(a.conversationId)}/messages${a.xAccountId ? `?xAccountId=${encodeURIComponent(a.xAccountId)}` : ''}`);
         break;
       case 'get_dm_events':
         result = await client.get(`/api/dm/events?xAccountId=${a.xAccountId}${a.conversationId ? `&conversationId=${a.conversationId}` : ''}`);
@@ -127,6 +159,72 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'account_summary':
         result = await client.get('/api/x-accounts');
         break;
+      case 'get_account_subscription':
+        result = await client.get(`/api/x-accounts/${encodeURIComponent(a.xAccountId)}/subscription`);
+        break;
+      case 'list_staff':
+        result = await client.get('/api/staff');
+        break;
+      case 'create_staff':
+        result = await client.post('/api/staff', { name: a.name, role: a.role });
+        break;
+      case 'update_staff':
+        result = await client.put(`/api/staff/${encodeURIComponent(a.id)}`, {
+          ...(a.name !== undefined ? { name: a.name } : {}),
+          ...(a.role !== undefined ? { role: a.role } : {}),
+          ...(a.isActive !== undefined ? { isActive: a.isActive } : {}),
+        });
+        break;
+      case 'delete_staff':
+        result = await client.del(`/api/staff/${encodeURIComponent(a.id)}`);
+        break;
+      case 'create_campaign': {
+        const conditions = a.conditions ?? {};
+        const gatePayload: Record<string, any> = {
+          xAccountId: a.xAccountId,
+          postId: a.postId,
+          triggerType: 'reply',
+          actionType: 'verify_only',
+          template: '',
+          ...(conditions.requireLike !== undefined ? { requireLike: conditions.requireLike } : {}),
+          ...(conditions.requireRepost !== undefined ? { requireRepost: conditions.requireRepost } : {}),
+          ...(a.lineHarnessUrl ? { lineHarnessUrl: a.lineHarnessUrl } : {}),
+          ...(a.lineHarnessApiKey ? { lineHarnessApiKey: a.lineHarnessApiKey } : {}),
+          ...(a.formId ? { formId: a.formId } : {}),
+          ...(a.ref ? { ref: a.ref } : {}),
+        };
+        const gate = await client.post<{ id: string }>('/api/engagement-gates', gatePayload);
+        const lineBase = (a.lineHarnessUrl || process.env.LINE_HARNESS_URL || '').replace(/\/$/, '');
+        const campaignLink = a.ref && lineBase
+          ? `${lineBase}/r/${encodeURIComponent(a.ref)}${a.formId ? `?form=${encodeURIComponent(a.formId)}` : ''}`
+          : null;
+        result = { gate, campaignLink };
+        break;
+      }
+      case 'get_usage_summary': {
+        const qs = new URLSearchParams();
+        if (a.xAccountId) qs.set('xAccountId', a.xAccountId);
+        if (a.startDate) qs.set('startDate', a.startDate);
+        if (a.endDate) qs.set('endDate', a.endDate);
+        result = await client.get(`/api/usage${qs.toString() ? `?${qs}` : ''}`);
+        break;
+      }
+      case 'get_usage_daily': {
+        const qs = new URLSearchParams();
+        if (a.xAccountId) qs.set('xAccountId', a.xAccountId);
+        if (a.startDate) qs.set('startDate', a.startDate);
+        if (a.endDate) qs.set('endDate', a.endDate);
+        result = await client.get(`/api/usage/daily${qs.toString() ? `?${qs}` : ''}`);
+        break;
+      }
+      case 'get_usage_by_gate': {
+        const qs = new URLSearchParams();
+        if (a.xAccountId) qs.set('xAccountId', a.xAccountId);
+        if (a.startDate) qs.set('startDate', a.startDate);
+        if (a.endDate) qs.set('endDate', a.endDate);
+        result = await client.get(`/api/usage/by-gate${qs.toString() ? `?${qs}` : ''}`);
+        break;
+      }
       default:
         return { content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }], isError: true };
     }

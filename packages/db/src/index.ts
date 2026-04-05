@@ -6,3 +6,8 @@ export * from './posts.js';
 export * from './users.js';
 export * from './x-accounts.js';
 export * from './step-sequences.js';
+export * from './staff.js';
+export * from './usage.js';
+export * from './follower-snapshots.js';
+export * from './quote-tweets.js';
+export * from './engagement-actions.js';

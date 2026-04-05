@@ -18,7 +18,6 @@ function serialize(row: any) {
     link: row.link,
     isActive: !!row.is_active,
     lineHarnessUrl: row.line_harness_url,
-    lineHarnessApiKey: row.line_harness_api_key,
     lineHarnessTag: row.line_harness_tag,
     lineHarnessScenarioId: row.line_harness_scenario_id,
     requireLike: !!row.require_like,
@@ -26,7 +25,7 @@ function serialize(row: any) {
     requireFollow: !!row.require_follow,
     replyKeyword: row.reply_keyword,
     lotteryEnabled: !!row.lottery_enabled,
-    pollingStrategy: row.polling_strategy ?? 'hot_window',
+    pollingStrategy: row.polling_strategy ?? 'manual',
     expiresAt: row.expires_at,
     nextPollAt: row.next_poll_at,
     apiCallsTotal: row.api_calls_total ?? 0,
@@ -50,15 +49,19 @@ function serializeDelivery(row: any) {
 
 engagementGates.post('/api/engagement-gates', async (c) => {
   const body = await c.req.json();
-  if (!body.xAccountId || !body.postId || !body.triggerType || !body.actionType || !body.template) {
-    return c.json({ success: false, error: 'Missing required fields: xAccountId, postId, triggerType, actionType, template' }, 400);
+  if (!body.xAccountId || !body.postId || !body.triggerType || !body.actionType) {
+    return c.json({ success: false, error: 'Missing required fields: xAccountId, postId, triggerType, actionType' }, 400);
   }
+  if (body.template === undefined) body.template = '';
   const gate = await createEngagementGate(c.env.DB, body);
   return c.json({ success: true, data: serialize(gate) }, 201);
 });
 
 engagementGates.get('/api/engagement-gates', async (c) => {
-  const gates = await getEngagementGates(c.env.DB);
+  const xAccountId = c.req.query('xAccountId');
+  const gates = await getEngagementGates(c.env.DB, {
+    ...(xAccountId ? { xAccountId } : {}),
+  });
   return c.json({ success: true, data: gates.map(serialize) });
 });
 
