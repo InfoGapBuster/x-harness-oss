@@ -10,8 +10,11 @@ export default function ApiCostGate({ onFetch, loading, description }: ApiCostGa
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-lg p-5 text-center space-y-3">
       <div className="text-amber-600 text-sm font-medium">
-        ⚠️ このページは X API を呼び出すため、表示するたびに課金が発生します
+        ⚠️ このページは X API を呼び出すため、X 公式の使用料が発生します
       </div>
+      <p className="text-xs text-amber-500">
+        ※ X Harness が課金することはありません。費用は X Developer Console のクレジットから差し引かれます。
+      </p>
       {description && (
         <p className="text-xs text-amber-500">{description}</p>
       )}
