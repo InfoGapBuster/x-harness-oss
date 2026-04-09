@@ -1,5 +1,11 @@
 # X Harness
 
+<p align="center">
+  <a href="https://x.com/ai_shunoda/status/2042184859003818077">
+    <img src="https://img.shields.io/badge/%F0%9D%95%8F_X_Harness_%E3%82%92%E7%84%A1%E6%96%99%E3%81%A7%E4%BD%93%E9%A8%93%E3%81%99%E3%82%8B-black?style=for-the-badge&logo=x&logoColor=white&labelColor=000000" alt="X Harness を無料で体験する" height="50">
+  </a>
+</p>
+
 X（旧Twitter）向けオープンソースマーケティングオートメーション。
 Xステップ・SocialDog の代替として、無料（または低コスト）で運用できます。
 
