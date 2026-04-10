@@ -287,7 +287,49 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
 
   const deliveredIds = await getDeliveredUserIds(c.env.DB, gateId);
 
-  // ─── Try cache first (no X API call) ───
+  // ─── Follow trigger: direct check, no cache needed ───
+  if (gate.trigger_type === 'follow') {
+    const clientResult = await buildXClientForGate(c.env.DB, gate);
+    if (!clientResult) return c.json({ success: false, error: 'X account not found' }, 500);
+
+    // Resolve username to user ID
+    let xUser;
+    try {
+      xUser = await clientResult.xClient.getUserByUsername(username);
+    } catch {
+      return c.json({
+        success: true,
+        data: { eligible: false, conditions: { follow: false, repost: null, like: null, reply: null }, message: 'Xアカウントが見つかりません' },
+      });
+    }
+
+    if (deliveredIds.has(xUser.id)) {
+      return c.json({
+        success: true,
+        data: { eligible: true, alreadyDelivered: true, conditions: { follow: true, repost: null, like: null, reply: null } },
+      });
+    }
+
+    // Check follow using paginated getFollowers (cached in EngagementCache within this request)
+    const cache = new EngagementCache();
+    const followerIds = await cache.getFollowerIds(clientResult.xClient, clientResult.account.x_user_id);
+    const isFollower = followerIds.has(xUser.id);
+
+    if (isFollower && gate.action_type === 'verify_only') {
+      await createDelivery(c.env.DB, gateId, xUser.id, username, null, 'delivered');
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        eligible: isFollower,
+        conditions: { follow: isFollower, repost: null, like: null, reply: null },
+        ...(isFollower ? {} : { message: 'フォローが確認できません' }),
+      },
+    });
+  }
+
+  // ─── Non-follow triggers: use cache ───
   const cached = await getCachedEngagers(c.env.DB, gateId);
   if (cached) {
     const match = cached.find((r) => r.username.toLowerCase() === username.toLowerCase());
