@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getEngagementGateById, getDeliveredUserIds, getXAccounts, createDelivery } from '@x-harness/db';
+import { getEngagementGateById, getDeliveredUserIds, getXAccounts, createDelivery, incrementApiUsage } from '@x-harness/db';
 import type { Env } from '../index.js';
 import { EngagementCache, checkConditions } from '../services/reply-trigger-cache.js';
 import { XClient } from '@x-harness/x-sdk';
@@ -311,6 +311,7 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
     let xUser;
     try {
       xUser = await clientResult.xClient.getUserByUsername(username);
+      c.executionCtx.waitUntil(incrementApiUsage(c.env.DB, gate.x_account_id, 'verify_get_user'));
     } catch {
       return c.json({
         success: true,
@@ -337,6 +338,7 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
       const engCache = new EngagementCache();
       const followerIds = await engCache.getFollowerIds(clientResult.xClient, clientResult.account.x_user_id);
       isFollower = followerIds.has(xUser.id);
+      c.executionCtx.waitUntil(incrementApiUsage(c.env.DB, gate.x_account_id, 'verify_get_followers'));
 
       // Bulk cache follower IDs (fire-and-forget, don't block response)
       c.executionCtx.waitUntil((async () => {
