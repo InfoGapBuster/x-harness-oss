@@ -287,12 +287,27 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
 
   const deliveredIds = await getDeliveredUserIds(c.env.DB, gateId);
 
-  // ─── Follow trigger: direct check, no cache needed ───
+  // ─── Follow trigger: check replier_cache first, then D1 follower cache, then X API ───
   if (gate.trigger_type === 'follow') {
+    // 1. Check replier_cache (HAR imports + previously verified users)
+    const cached = await getCachedEngagers(c.env.DB, gateId);
+    if (cached) {
+      const match = cached.find((r) => r.username.toLowerCase() === username.toLowerCase());
+      if (match && match.eligible) {
+        if (gate.action_type === 'verify_only' && !deliveredIds.has(match.xUserId)) {
+          await createDelivery(c.env.DB, gateId, match.xUserId, match.username, null, 'delivered');
+        }
+        return c.json({
+          success: true,
+          data: { eligible: true, alreadyDelivered: deliveredIds.has(match.xUserId), conditions: match.conditions, cached: true },
+        });
+      }
+    }
+
+    // 2. Not in cache — resolve username and check follower_id_cache / X API
     const clientResult = await buildXClientForGate(c.env.DB, gate);
     if (!clientResult) return c.json({ success: false, error: 'X account not found' }, 500);
 
-    // Resolve username to user ID
     let xUser;
     try {
       xUser = await clientResult.xClient.getUserByUsername(username);
@@ -310,13 +325,46 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
       });
     }
 
-    // Check follow using paginated getFollowers (cached in EngagementCache within this request)
-    const cache = new EngagementCache();
-    const followerIds = await cache.getFollowerIds(clientResult.xClient, clientResult.account.x_user_id);
-    const isFollower = followerIds.has(xUser.id);
+    // 3. Check D1 follower_id_cache
+    const cachedFollower = await c.env.DB.prepare(
+      'SELECT 1 FROM follower_id_cache WHERE x_account_id = ? AND follower_x_user_id = ?',
+    ).bind(clientResult.account.x_user_id, xUser.id).first();
 
-    if (isFollower && gate.action_type === 'verify_only') {
-      await createDelivery(c.env.DB, gateId, xUser.id, username, null, 'delivered');
+    let isFollower = !!cachedFollower;
+
+    // 4. Cache miss — fetch from X API and cache ALL follower IDs
+    if (!isFollower) {
+      const engCache = new EngagementCache();
+      const followerIds = await engCache.getFollowerIds(clientResult.xClient, clientResult.account.x_user_id);
+      isFollower = followerIds.has(xUser.id);
+
+      // Bulk cache follower IDs (fire-and-forget, don't block response)
+      c.executionCtx.waitUntil((async () => {
+        const now = new Date().toISOString();
+        const batch: D1PreparedStatement[] = [];
+        for (const fid of followerIds) {
+          batch.push(
+            c.env.DB.prepare('INSERT INTO follower_id_cache (x_account_id, follower_x_user_id, cached_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
+              .bind(clientResult.account.x_user_id, fid, now),
+          );
+        }
+        // D1 batch supports up to 100 statements at a time
+        for (let i = 0; i < batch.length; i += 100) {
+          await c.env.DB.batch(batch.slice(i, i + 100));
+        }
+      })());
+    }
+
+    // 5. Cache the verified user in replier_cache for instant future lookups
+    if (isFollower) {
+      await setCachedEngagers(c.env.DB, gateId, [{
+        xUserId: xUser.id, username: xUser.username, displayName: xUser.name,
+        profileImageUrl: xUser.profile_image_url || null, eligible: true,
+        conditions: { follow: true, repost: null, like: null, reply: null },
+      }]);
+      if (gate.action_type === 'verify_only' && !deliveredIds.has(xUser.id)) {
+        await createDelivery(c.env.DB, gateId, xUser.id, username, null, 'delivered');
+      }
     }
 
     return c.json({
