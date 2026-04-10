@@ -124,6 +124,27 @@ async function fetchAndCache(
         },
       });
     }
+  } else if (gate.trigger_type === 'follow') {
+    // ─── Follow trigger: getFollowers (paginated, up to 10,000) ───
+    // No checkConditions needed — follow itself is the trigger.
+    // Cheapest option: just getFollowers, no per-user condition checks.
+    let paginationToken: string | undefined;
+    let page = 0;
+    do {
+      const result = await xClient.getFollowers(accountXUserId, paginationToken);
+      if (result.data) {
+        for (const user of result.data) {
+          engagers.push({
+            xUserId: user.id, username: user.username, displayName: user.name,
+            profileImageUrl: user.profile_image_url || null,
+            eligible: true,
+            conditions: { follow: true, repost: null, like: null, reply: null },
+          });
+        }
+      }
+      paginationToken = (result as any).meta?.next_token;
+      page++;
+    } while (paginationToken && page < 10);
   } else if (gate.trigger_type === 'like') {
     // ─── Like trigger: getLikingUsers ───
     const result = await xClient.getLikingUsers(gate.post_id);
