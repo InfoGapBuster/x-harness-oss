@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS search_themes (
 );
 
 -- Seed initial themes from user requirements
-INSERT INTO search_themes (id, name, query, min_likes, min_retweets, created_at, updated_at) VALUES
+INSERT OR IGNORE INTO search_themes (id, name, query, min_likes, min_retweets, created_at, updated_at) VALUES
 ('theme_1', 'ダイバーシティ', 'ダイバーシティ', 100, 100, datetime('now'), datetime('now')),
 ('theme_2', 'インクルージョン', 'インクルージョン', 50, 50, datetime('now'), datetime('now')),
 ('theme_3', 'ビジネスと人権', 'ビジネスと人権', 30, 30, datetime('now'), datetime('now')),
