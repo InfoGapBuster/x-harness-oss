@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { XClient } from '@x-harness/x-sdk';
-import { createScheduledPost, getScheduledPosts, deleteScheduledPost, getXAccountById, getXAccounts, incrementApiUsage, saveQuoteTweets, getQuoteTweetsByAccount, getQuoteTweetsBySource, getLatestDiscoveredAt, recordAction, getActions } from '@x-harness/db';
-import type { SaveQuoteTweetInput } from '@x-harness/db';
+import { createScheduledPost, getScheduledPosts, deleteScheduledPost, getXAccountById, getXAccounts, incrementApiUsage, saveQuoteTweets, getQuoteTweetsByAccount, getQuoteTweetsBySource, getLatestDiscoveredAt, recordAction, getActions, saveCollectedPosts, getCollectedPosts, deleteCollectedPost } from '@x-harness/db';
+import type { SaveQuoteTweetInput, SaveCollectedPostInput } from '@x-harness/db';
 import type { Env } from '../index.js';
 
 const posts = new Hono<Env>();
@@ -623,6 +623,99 @@ posts.post('/api/quotes/sync', async (c) => {
     return c.json({ success: true, data: { tweetsChecked: tweets.length, quotesSaved: totalSaved } });
   } catch (err: any) {
     return c.json({ success: false, error: err.message ?? 'Failed to sync quotes' }, 500);
+  }
+});
+
+// POST /api/posts/collect — Search and collect posts into DB
+posts.post('/api/posts/collect', async (c) => {
+  const { xAccountId, query, maxResults } = await c.req.json<{ xAccountId: string; query: string; maxResults?: number }>();
+  if (!xAccountId || !query) return c.json({ success: false, error: 'Missing xAccountId or query' }, 400);
+
+  const account = await getXAccountById(c.env.DB, xAccountId);
+  if (!account) return c.json({ success: false, error: 'X account not found' }, 404);
+  const xClient = buildXClient(account);
+
+  try {
+    const raw = await xClient.searchRecentTweets(query) as {
+      data: Array<{
+        id: string;
+        text: string;
+        author_id: string;
+        created_at?: string;
+        public_metrics?: any;
+      }>;
+      includes?: {
+        users?: Array<{
+          id: string;
+          username: string;
+          name: string;
+          profile_image_url?: string;
+        }>;
+      };
+      meta?: { next_token?: string };
+    };
+
+    const usersMap = new Map<string, { username: string; name: string; profile_image_url?: string }>();
+    for (const u of raw.includes?.users ?? []) {
+      usersMap.set(u.id, { username: u.username, name: u.name, profile_image_url: u.profile_image_url });
+    }
+
+    const toSave: SaveCollectedPostInput[] = (raw.data ?? []).map((t) => {
+      const author = usersMap.get(t.author_id);
+      return {
+        id: t.id,
+        authorId: t.author_id,
+        authorUsername: author?.username ?? null,
+        authorDisplayName: author?.name ?? null,
+        authorProfileImageUrl: author?.profile_image_url ?? null,
+        text: t.text,
+        createdAt: t.created_at ?? new Date().toISOString(),
+        publicMetrics: t.public_metrics ?? null,
+      };
+    });
+
+    if (toSave.length > 0) {
+      await saveCollectedPosts(c.env.DB, account.id, query, toSave);
+    }
+
+    c.executionCtx.waitUntil(incrementApiUsage(c.env.DB, account.id, 'search_collect_posts'));
+    return c.json({ success: true, data: { count: toSave.length, nextToken: raw.meta?.next_token } });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to collect posts' }, 500);
+  }
+});
+
+// GET /api/posts/collected — List collected posts from DB
+posts.get('/api/posts/collected', async (c) => {
+  const xAccountId = c.req.query('xAccountId');
+  const query = c.req.query('query');
+  const limit = Number(c.req.query('limit') || '50');
+  const offset = Number(c.req.query('offset') || '0');
+
+  if (!xAccountId) return c.json({ success: false, error: 'Missing xAccountId' }, 400);
+
+  try {
+    const items = await getCollectedPosts(c.env.DB, xAccountId, { query: query ?? undefined, limit, offset });
+    return c.json({
+      success: true,
+      data: items.map((p) => ({
+        ...p,
+        publicMetrics: p.public_metrics ? JSON.parse(p.public_metrics) : null,
+      })),
+    });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to fetch collected posts' }, 500);
+  }
+});
+
+// DELETE /api/posts/collected/:id — Remove a collected post from DB
+posts.delete('/api/posts/collected/:id', async (c) => {
+  const id = c.req.param('id');
+  try {
+    await deleteCollectedPost(c.env.DB, id);
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to delete collected post' }, 500);
   }
 });
 

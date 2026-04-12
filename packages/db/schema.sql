@@ -209,3 +209,23 @@ CREATE TABLE IF NOT EXISTS engagement_actions (
   UNIQUE(x_account_id, tweet_id, action_type)
 );
 CREATE INDEX IF NOT EXISTS idx_engagement_actions_account ON engagement_actions(x_account_id);
+
+-- Collected Posts (general post collection via search or timelines, similar to x_post_collector)
+CREATE TABLE IF NOT EXISTS collected_posts (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  query TEXT,
+  author_id TEXT NOT NULL,
+  author_username TEXT,
+  author_display_name TEXT,
+  author_profile_image_url TEXT,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  discovered_at TEXT NOT NULL,
+  public_metrics TEXT,
+  commentary TEXT,
+  reply_draft TEXT,
+  FOREIGN KEY (x_account_id) REFERENCES x_accounts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_collected_posts_account ON collected_posts(x_account_id, discovered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collected_posts_query ON collected_posts(query);

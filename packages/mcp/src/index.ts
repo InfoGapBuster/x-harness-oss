@@ -78,6 +78,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'schedule_post':
         result = await client.post('/api/posts/schedule', a);
         break;
+      case 'collect_posts':
+        result = await client.post('/api/posts/collect', { xAccountId: a.xAccountId, query: a.query });
+        break;
+      case 'list_collected_posts': {
+        const params = new URLSearchParams({ xAccountId: a.xAccountId });
+        if (a.query) params.set('query', a.query);
+        if (a.limit) params.set('limit', String(a.limit));
+        if (a.offset) params.set('offset', String(a.offset));
+        result = await client.get(`/api/posts/collected?${params.toString()}`);
+        break;
+      }
       case 'like_post':
       case 'unlike_post':
       case 'retweet':

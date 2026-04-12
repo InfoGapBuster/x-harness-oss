@@ -98,6 +98,22 @@ export interface User {
   createdAt: string;
 }
 
+export interface CollectedPost {
+  id: string;
+  xAccountId: string;
+  query: string | null;
+  authorId: string;
+  authorUsername: string | null;
+  authorDisplayName: string | null;
+  authorProfileImageUrl: string | null;
+  text: string;
+  createdAt: string;
+  discoveredAt: string;
+  publicMetrics: Record<string, number> | null;
+  commentary: string | null;
+  replyDraft: string | null;
+}
+
 export interface CreateGateInput {
   xAccountId: string;
   postId: string;

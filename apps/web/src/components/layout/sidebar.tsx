@@ -18,6 +18,7 @@ const menuSections = [
   {
     label: '投稿',
     items: [
+      { href: '/daily-reports', label: 'デイリーレポート', icon: 'M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2zM14 4v4h4' },
       { href: '/posts', label: '投稿管理', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z' },
       { href: '/replies', label: 'リプライ', icon: 'M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6' },
       { href: '/quotes', label: '引用', icon: 'M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z' },

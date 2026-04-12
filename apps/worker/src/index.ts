@@ -21,12 +21,19 @@ import { usage } from './routes/usage.js';
 import { xaa } from './routes/xaa.js';
 import { campaigns } from './routes/campaigns.js';
 import { setup } from './routes/setup.js';
+import { searchThemes } from './routes/search-themes.js';
 import { processStepSequences } from './services/step-processor.js';
+import { getActiveSearchThemes, saveCollectedPosts } from '@x-harness/db';
+import { GrokClient } from '@x-harness/x-sdk';
+import { generateEmailReport, sendEmail } from './services/notifier.js';
 
 export type Env = {
   Bindings: {
     DB: D1Database;
     API_KEY: string;
+    XAI_API_KEY?: string; // xAI (Grok) API Key
+    RESEND_API_KEY?: string; // For email notifications
+    NOTIFY_EMAIL?: string; // Destination email
     X_ACCESS_TOKEN: string;
     X_REFRESH_TOKEN: string;
     WORKER_URL: string;
@@ -60,6 +67,7 @@ app.route('/', usage);
 app.route('/', xaa);
 app.route('/', campaigns);
 app.route('/', setup);
+app.route('/', searchThemes);
 
 // Settings API (key-value store)
 app.get('/api/settings', async (c) => {
@@ -186,6 +194,53 @@ async function scheduled(
         : new XClient(account.access_token);
     };
     await processStepSequences(env.DB, buildXClient);
+  }
+
+  // Daily Grok Search Report (6 AM)
+  const xaiApiKey = env.XAI_API_KEY;
+  if (xaiApiKey && dbAccounts.length > 0) {
+    try {
+      const themes = await getActiveSearchThemes(env.DB);
+      if (themes.length > 0) {
+        const grok = new GrokClient({ apiKey: xaiApiKey });
+        const report = await grok.generateDailyReport(themes.map(t => ({
+          name: t.name,
+          min_likes: t.min_likes,
+          min_retweets: t.min_retweets,
+        })));
+
+        const toSave = report.map(p => ({
+          id: p.id,
+          authorId: p.author_id,
+          authorUsername: p.author_username,
+          authorDisplayName: p.author_display_name,
+          text: p.text,
+          createdAt: p.created_at,
+          publicMetrics: {
+            ...p.public_metrics,
+            author_description: p.author_description // Store in metrics for now to avoid schema change
+          },
+          commentary: p.commentary,
+          replyDraft: p.reply_draft,
+        }));
+
+        // Use the first account to store the global report
+        await saveCollectedPosts(env.DB, dbAccounts[0].id, 'daily_report', toSave);
+
+        // Send Email Notification
+        if (env.RESEND_API_KEY && env.NOTIFY_EMAIL) {
+          const emailContent = generateEmailReport(toSave);
+          await sendEmail(
+            env.RESEND_API_KEY,
+            env.NOTIFY_EMAIL,
+            `【X-Harness】今朝の注目ポストレポート (${new Date().toLocaleDateString('ja-JP')})`,
+            emailContent
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Failed to generate daily Grok report:', err);
+    }
   }
 }
 

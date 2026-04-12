@@ -218,7 +218,32 @@ CREATE TABLE scheduled_posts (
 );
 ```
 
-### 6. UUID統合（The Harness準備）
+### 6. デイリーレポート & Search Themes
+xAI (Grok-3) を活用した、伊藤芳浩の視点による注目ポストの自動収集と解説。
+
+**仕組み:**
+1. `search_themes` テーブルに検索キーワードと反響しきい値（いいね/RT数）を登録。
+2. 毎朝6時に Cron が起動し、Grok API を使用して X 上の最新投稿を検索。
+3. 伊藤芳浩のプロフィール・専門性に基づき、注目すべき10件を選定。
+4. 各ポストに対して AI が「専門的解説」と「返信/引用RTのドラフト案」を生成。
+5. 生成されたレポートを DB に保存し、Resend を通じてメール通知を送信。
+6. 管理画面の「デイリーレポート」ページから、ドラフト案を調整してワンクリックで X に投稿可能。
+
+**テーブル: `search_themes`**
+```sql
+CREATE TABLE search_themes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  query TEXT NOT NULL,
+  min_likes INTEGER DEFAULT 0,
+  min_retweets INTEGER DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+```
+
+### 7. UUID統合（The Harness準備）
 
 ```sql
 CREATE TABLE users (
@@ -234,7 +259,7 @@ CREATE TABLE users (
 -- LINE Harness の users テーブルと同じ UUID 体系
 ```
 
-### 7. IF-THENオートメーション
+### 8. IF-THENオートメーション
 
 ```sql
 CREATE TABLE automations (

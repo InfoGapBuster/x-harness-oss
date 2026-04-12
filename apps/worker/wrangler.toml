@@ -8,12 +8,13 @@ workers_dev = true
 # Set via: wrangler secret put X_REFRESH_TOKEN
 
 [vars]
-WORKER_URL = "https://x-harness-worker.workers.dev"
+WORKER_URL = "https://x-harness-worker.infogapbuster.workers.dev"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "x-harness"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "0f5a246b-7108-4b03-b88f-0f838151b70a"
+migrations_dir = "../../packages/db/migrations"
 
 [triggers]
 crons = ["*/5 * * * *"]

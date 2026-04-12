@@ -191,6 +191,22 @@ export interface GateUsage {
   apiCallsTotal: number; estimatedCost: number;
 }
 
+export interface CollectedPost {
+  id: string;
+  xAccountId: string;
+  query: string | null;
+  authorId: string;
+  authorUsername: string | null;
+  authorDisplayName: string | null;
+  authorProfileImageUrl: string | null;
+  text: string;
+  createdAt: string;
+  discoveredAt: string;
+  publicMetrics: Record<string, number> | null;
+  commentary: string | null;
+  replyDraft: string | null;
+}
+
 export const api = {
   health: () => fetchApi<ApiResponse<{ status: string }>>('/api/health'),
 
@@ -390,5 +406,17 @@ export const api = {
       return fetchApi<ApiResponse<DailyUsage[]>>(`/api/usage/daily?${qs}`);
     },
     byGate: () => fetchApi<ApiResponse<GateUsage[]>>('/api/usage/by-gate'),
+  },
+
+  reports: {
+    list: (params: { xAccountId: string; query?: string; limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams({ xAccountId: params.xAccountId });
+      if (params.query) qs.set('query', params.query);
+      if (params.limit) qs.set('limit', String(params.limit));
+      if (params.offset) qs.set('offset', String(params.offset));
+      return fetchApi<ApiResponse<CollectedPost[]>>(`/api/posts/collected?${qs}`);
+    },
+    run: (xAccountId: string) =>
+      fetchApi<ApiResponse<{ count: number }>>(`/api/search-themes/run?xAccountId=${xAccountId}`, { method: 'POST' }),
   },
 };

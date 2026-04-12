@@ -8,4 +8,6 @@ export const postToolDefs = [
   { name: 'reply_to_post', description: '特定のツイートに返信する', inputSchema: { type: 'object' as const, properties: { xAccountId: { type: 'string' }, tweetId: { type: 'string', description: '返信先ツイートID' }, text: { type: 'string' } }, required: ['xAccountId', 'tweetId', 'text'] } },
   { name: 'search_posts', description: 'Search recent tweets', inputSchema: { type: 'object' as const, properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'schedule_post', description: 'ツイートをスケジュール投稿する', inputSchema: { type: 'object' as const, properties: { xAccountId: { type: 'string' }, text: { type: 'string' }, scheduledAt: { type: 'string', description: 'ISO 8601形式の投稿日時' } }, required: ['xAccountId', 'text', 'scheduledAt'] } },
+  { name: 'collect_posts', description: '特定のキーワードでポストを検索し、データベースに収集・保存する', inputSchema: { type: 'object' as const, properties: { xAccountId: { type: 'string' }, query: { type: 'string', description: '検索クエリ（例: "TypeScript", "from:openai"）' } }, required: ['xAccountId', 'query'] } },
+  { name: 'list_collected_posts', description: 'データベースに収集済みのポスト一覧を取得する', inputSchema: { type: 'object' as const, properties: { xAccountId: { type: 'string' }, query: { type: 'string', description: '特定のクエリで収集されたもののみ取得' }, limit: { type: 'number' }, offset: { type: 'number' } }, required: ['xAccountId'] } },
 ];

@@ -14,3 +14,4 @@ export type {
   XDmMessage,
   XList,
 } from './types.js';
+export * from './xai.js';
