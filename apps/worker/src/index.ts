@@ -196,9 +196,17 @@ async function scheduled(
     await processStepSequences(env.DB, buildXClient);
   }
 
-  // Daily Grok Search Report (6 AM)
+  // Daily Grok Search Report (6 AM JST)
+  // Check if it's around 6:00 AM JST (GMT+9)
+  const now = new Date();
+  const jstHour = (now.getUTCHours() + 9) % 24;
+  const jstMinute = now.getUTCMinutes();
+  
+  // Run if it's 6:00 - 6:05 AM JST and enabled
+  const reportsEnabled = await getSettingBool(env.DB, 'auto_reports_enabled', false);
   const xaiApiKey = env.XAI_API_KEY;
-  if (xaiApiKey && dbAccounts.length > 0) {
+
+  if (reportsEnabled && xaiApiKey && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
     try {
       const themes = await getActiveSearchThemes(env.DB);
       if (themes.length > 0) {

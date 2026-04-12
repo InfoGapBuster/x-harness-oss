@@ -1,14 +1,45 @@
 import { Hono } from 'hono';
-import { getActiveSearchThemes, saveCollectedPosts } from '@x-harness/db';
+import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts } from '@x-harness/db';
 import { GrokClient } from '@x-harness/x-sdk';
 import type { Env } from '../index.js';
 
 const searchThemes = new Hono<Env>();
 
-// GET /api/search-themes — List active search themes
+// GET /api/search-themes — List all search themes
 searchThemes.get('/api/search-themes', async (c) => {
-  const themes = await getActiveSearchThemes(c.env.DB);
+  const themes = await getAllSearchThemes(c.env.DB);
   return c.json({ success: true, data: themes });
+});
+
+// POST /api/search-themes — Create a new search theme
+searchThemes.post('/api/search-themes', async (c) => {
+  const body = await c.req.json<{ name: string; query: string; min_likes?: number; min_retweets?: number; is_active?: number }>();
+  if (!body.name || !body.query) return c.json({ success: false, error: 'name and query required' }, 400);
+
+  const theme = await createSearchTheme(c.env.DB, {
+    name: body.name,
+    query: body.query,
+    min_likes: body.min_likes ?? 0,
+    min_retweets: body.min_retweets ?? 0,
+    is_active: body.is_active ?? 1,
+  });
+
+  return c.json({ success: true, data: theme }, 201);
+});
+
+// PUT /api/search-themes/:id — Update an existing search theme
+searchThemes.put('/api/search-themes/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<any>();
+  await updateSearchTheme(c.env.DB, id, body);
+  return c.json({ success: true });
+});
+
+// DELETE /api/search-themes/:id — Delete a search theme
+searchThemes.delete('/api/search-themes/:id', async (c) => {
+  const id = c.req.param('id');
+  await deleteSearchTheme(c.env.DB, id);
+  return c.json({ success: true });
 });
 
 // POST /api/search-themes/run — Manually trigger Grok report generation
@@ -31,7 +62,6 @@ searchThemes.post('/api/search-themes/run', async (c) => {
     })));
 
     // Save to collected_posts with commentary in a dedicated field or prepended to text
-    // For now, we'll store them in collected_posts with query="daily_report"
     const toSave = report.map(p => ({
       id: p.id,
       authorId: p.author_id,

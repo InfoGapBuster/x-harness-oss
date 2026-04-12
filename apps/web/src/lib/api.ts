@@ -408,6 +408,13 @@ export const api = {
     byGate: () => fetchApi<ApiResponse<GateUsage[]>>('/api/usage/by-gate'),
   },
 
+  searchThemes: {
+    list: () => fetchApi<ApiResponse<any[]>>('/api/search-themes'),
+    create: (data: any) => fetchApi<ApiResponse<any>>('/api/search-themes', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) => fetchApi<ApiResponse<any>>(`/api/search-themes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: string) => fetchApi<ApiResponse<void>>(`/api/search-themes/${id}`, { method: 'DELETE' }),
+  },
+
   reports: {
     list: (params: { xAccountId: string; query?: string; limit?: number; offset?: number }) => {
       const qs = new URLSearchParams({ xAccountId: params.xAccountId });
