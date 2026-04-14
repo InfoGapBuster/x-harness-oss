@@ -106,9 +106,32 @@ ${themeContext}
 
     const data = await response.json() as any;
     try {
-      const content = JSON.parse(data.choices[0].message.content);
-      return (content.posts || content.results || content) as GrokPostResult[];
+      const text = data.choices[0].message.content;
+      const content = JSON.parse(text);
+      
+      // Handle cases where the model returns { "posts": [...] } or { "results": [...] } or just [...]
+      let results = [];
+      if (Array.isArray(content)) {
+        results = content;
+      } else if (content.posts && Array.isArray(content.posts)) {
+        results = content.posts;
+      } else if (content.results && Array.isArray(content.results)) {
+        results = content.results;
+      } else if (typeof content === 'object') {
+        // Find any field that is an array
+        const arrayField = Object.values(content).find(v => Array.isArray(v));
+        if (arrayField) {
+          results = arrayField as any[];
+        }
+      }
+
+      if (results.length === 0) {
+        console.error('Grok returned no posts or invalid format:', text);
+      }
+
+      return results as GrokPostResult[];
     } catch (e) {
+      console.error('Failed to parse Grok response:', data.choices[0].message.content);
       throw new Error('Failed to parse Grok daily report results');
     }
   }
