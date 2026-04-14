@@ -3,6 +3,11 @@ import { getStaffMemberByApiKey, updateStaffLastLogin } from '@x-harness/db';
 import type { Env } from '../index.js';
 
 export async function authMiddleware(c: Context<Env>, next: Next): Promise<Response | void> {
+  // Allow CORS preflight requests
+  if (c.req.method === 'OPTIONS') {
+    return next();
+  }
+
   const path = new URL(c.req.url).pathname;
   if (path === '/api/health' || path === '/webhook/xaa' || path === '/api/followers/search' || path === '/api/users/search' || path === '/setup' || path.startsWith('/api/tokens/') || path.match(/^\/api\/engagement-gates\/[^/]+\/(verify|repliers)$/)) {
     return next();
