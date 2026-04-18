@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts } from '@x-harness/db';
-import { GrokClient } from '@x-harness/x-sdk';
+import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts, getXAccountById } from '@x-harness/db';
+import { ClaudeClient, XClient } from '@x-harness/x-sdk';
 import type { Env } from '../index.js';
 
 const searchThemes = new Hono<Env>();
@@ -42,26 +42,76 @@ searchThemes.delete('/api/search-themes/:id', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/search-themes/run — Manually trigger Grok report generation
+// POST /api/search-themes/run — Manually trigger Claude report generation
 searchThemes.post('/api/search-themes/run', async (c) => {
-  const xaiApiKey = c.env.XAI_API_KEY;
-  if (!xaiApiKey) return c.json({ success: false, error: 'XAI_API_KEY not configured' }, 500);
+  const anthropicApiKey = c.env.ANTHROPIC_API_KEY;
+  if (!anthropicApiKey) return c.json({ success: false, error: 'ANTHROPIC_API_KEY not configured' }, 500);
 
   const xAccountId = c.req.query('xAccountId');
   if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
 
+  const account = await getXAccountById(c.env.DB, xAccountId);
+  if (!account) return c.json({ success: false, error: 'Account not found' }, 404);
+
   const themes = await getActiveSearchThemes(c.env.DB);
   if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
 
-  const grok = new GrokClient({ apiKey: xaiApiKey });
-  try {
-    const report = await grok.generateDailyReport(themes.map(t => ({
-      name: t.name,
-      min_likes: t.min_likes,
-      min_retweets: t.min_retweets,
-    })));
+  const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+    ? new XClient({
+        type: 'oauth1',
+        consumerKey: account.consumer_key,
+        consumerSecret: account.consumer_secret,
+        accessToken: account.access_token,
+        accessTokenSecret: account.access_token_secret,
+      })
+    : new XClient(account.access_token);
 
-    // Save to collected_posts with commentary in a dedicated field or prepended to text
+  // 1. Fetch real tweets for each theme
+  const allTweets: any[] = [];
+  const errors: string[] = [];
+  console.log(`[DEBUG] Starting manual report run for ${themes.length} themes`);
+
+  for (const theme of themes) {
+    try {
+      const searchQuery = `${theme.query} lang:ja -is:retweet`;
+      const searchRes = await xClient.searchRecentTweets(searchQuery);
+
+      if (searchRes.data && searchRes.data.length > 0) {
+        const usersMap = new Map(searchRes.includes?.users?.map((u: any) => [u.id, u]) || []);
+        const mapped = searchRes.data.map((t: any) => {
+          const user = usersMap.get(t.author_id);
+          return {
+            id: t.id,
+            text: t.text,
+            author_id: t.author_id,
+            author_username: user?.username,
+            author_display_name: user?.name,
+            public_metrics: t.public_metrics,
+            created_at: t.created_at,
+          };
+        });
+        allTweets.push(...mapped);
+      }
+    } catch (err: any) {
+      console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
+      errors.push(`${theme.name}: ${err.message}`);
+    }
+  }
+
+  if (allTweets.length === 0) {
+    const errorMsg = errors.length > 0
+      ? `X APIエラーが発生しました: ${errors[0]}`
+      : '条件に一致するポストが見つかりませんでした。';
+    return c.json({ success: false, error: errorMsg }, 402);
+  }
+
+  // 2. Analyze with Claude
+  const claude = new ClaudeClient(anthropicApiKey);
+  try {
+    console.log(`[DEBUG] Sending ${allTweets.length} tweets to Claude for analysis`);
+    const report = await claude.analyzePosts(allTweets.slice(0, 50));
+    console.log(`[DEBUG] Claude selected ${report.length} posts for the report`);
+
     const toSave = report.map(p => ({
       id: p.id,
       authorId: p.author_id,
@@ -69,7 +119,10 @@ searchThemes.post('/api/search-themes/run', async (c) => {
       authorDisplayName: p.author_display_name,
       text: p.text,
       createdAt: p.created_at,
-      publicMetrics: p.public_metrics,
+      publicMetrics: {
+        ...p.public_metrics,
+        author_description: p.author_description,
+      },
       commentary: p.commentary,
       replyDraft: p.reply_draft,
     }));
@@ -78,6 +131,7 @@ searchThemes.post('/api/search-themes/run', async (c) => {
 
     return c.json({ success: true, data: { count: toSave.length } });
   } catch (err: any) {
+    console.error(`[ERROR] Claude analysis failed:`, err.message);
     return c.json({ success: false, error: err.message }, 500);
   }
 });

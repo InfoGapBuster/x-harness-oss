@@ -19,15 +19,17 @@ export default function DailyReportsPage() {
   const [posting, setPosting] = useState(false)
 
   const loadReports = useCallback(async () => {
-    if (!selectedAccountId) return
     setLoading(true)
     setError('')
     try {
-      const res = await api.reports.list({ xAccountId: selectedAccountId, query: 'daily_report', limit: 10 })
+      console.log('Fetching reports with accountId:', selectedAccountId);
+      const res = await api.reports.list({ xAccountId: selectedAccountId || '', query: 'daily_report', limit: 10 })
+      console.log('Reports API Response:', res);
       if (res.success) {
-        setReports(res.data)
+        setReports(res.data || [])
       }
     } catch (err: any) {
+      console.error('Failed to load reports:', err);
       setError(err.message || 'レポートの読み込みに失敗しました')
     } finally {
       setLoading(false)
@@ -163,19 +165,21 @@ export default function DailyReportsPage() {
                 {/* 1. Author Header */}
                 <div className="flex items-start gap-4 mb-6">
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center font-bold text-white text-lg shadow-inner">
-                    {post.authorUsername?.[0].toUpperCase()}
+                    {post.authorUsername ? post.authorUsername[0].toUpperCase() : '?'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-gray-900 text-lg truncate">{post.authorDisplayName || post.authorUsername}</span>
-                      <a 
-                        href={`https://x.com/${post.authorUsername}`} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="text-blue-500 hover:underline text-sm font-medium"
-                      >
-                        @{post.authorUsername}
-                      </a>
+                      <span className="font-extrabold text-gray-900 text-lg truncate">{post.authorDisplayName || post.authorUsername || 'Unknown User'}</span>
+                      {post.authorUsername && (
+                        <a 
+                          href={`https://x.com/${post.authorUsername}`} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-blue-500 hover:underline text-sm font-medium"
+                        >
+                          @{post.authorUsername}
+                        </a>
+                      )}
                     </div>
                     {/* Author Bio/Description (NEW) */}
                     {(post as any).author_description && (
@@ -185,7 +189,7 @@ export default function DailyReportsPage() {
                     )}
                   </div>
                   <div className="text-xs text-gray-400 whitespace-nowrap bg-gray-50 px-2 py-1 rounded border border-gray-100">
-                    {new Date(post.createdAt).toLocaleDateString('ja-JP')}
+                    {post.createdAt ? new Date(post.createdAt).toLocaleDateString('ja-JP') : '不明な日付'}
                   </div>
                 </div>
 

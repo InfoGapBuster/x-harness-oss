@@ -38,7 +38,7 @@ export async function saveCollectedPosts(
   if (posts.length === 0) return;
   const now = jstNow();
   const stmt = db.prepare(
-    'INSERT OR IGNORE INTO collected_posts (id, x_account_id, query, author_id, author_username, author_display_name, author_profile_image_url, text, created_at, discovered_at, public_metrics, commentary, reply_draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT OR REPLACE INTO collected_posts (id, x_account_id, query, author_id, author_username, author_display_name, author_profile_image_url, text, created_at, discovered_at, public_metrics, commentary, reply_draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const batch = posts.map((p) =>
     stmt.bind(
@@ -62,7 +62,7 @@ export async function saveCollectedPosts(
 
 export async function getCollectedPosts(
   db: D1Database,
-  xAccountId: string,
+  xAccountId: string | null | undefined,
   opts: {
     query?: string;
     limit?: number;
@@ -70,12 +70,21 @@ export async function getCollectedPosts(
   } = {},
 ): Promise<DbCollectedPost[]> {
   const { query, limit = 50, offset = 0 } = opts;
-  let sql = 'SELECT * FROM collected_posts WHERE x_account_id = ?';
-  const binds: any[] = [xAccountId];
+  let sql = 'SELECT * FROM collected_posts';
+  const binds: any[] = [];
 
+  const conditions: string[] = [];
+  if (xAccountId) {
+    conditions.push('x_account_id = ?');
+    binds.push(xAccountId);
+  }
   if (query) {
-    sql += ' AND query = ?';
+    conditions.push('query = ?');
     binds.push(query);
+  }
+
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
   }
 
   sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';

@@ -692,16 +692,42 @@ posts.get('/api/posts/collected', async (c) => {
   const limit = Number(c.req.query('limit') || '50');
   const offset = Number(c.req.query('offset') || '0');
 
-  if (!xAccountId) return c.json({ success: false, error: 'Missing xAccountId' }, 400);
+  // If we have a query (like daily_report), we can fetch without a specific account ID
+  const isGlobalQuery = !!query;
+  if (!xAccountId && !isGlobalQuery) return c.json({ success: false, error: 'Missing xAccountId' }, 400);
 
   try {
-    const items = await getCollectedPosts(c.env.DB, xAccountId, { query: query ?? undefined, limit, offset });
+    // Treat empty strings as null to avoid SQL filtering on empty x_account_id
+    const effectiveAccountId = (isGlobalQuery || !xAccountId) ? null : xAccountId;
+    
+    console.log(`[DEBUG] Fetching collected posts: query=${query}, xAccountId=${xAccountId}, effectiveAccountId=${effectiveAccountId}`);
+
+    const items = await getCollectedPosts(c.env.DB, effectiveAccountId, { query: query ?? undefined, limit, offset });
+    
+    console.log(`[DEBUG] Found ${items.length} items`);
+    
     return c.json({
       success: true,
-      data: items.map((p) => ({
-        ...p,
-        publicMetrics: p.public_metrics ? JSON.parse(p.public_metrics) : null,
-      })),
+      data: items.map((p) => {
+        const metrics = p.public_metrics ? JSON.parse(p.public_metrics) : null;
+        return {
+          id: p.id,
+          xAccountId: p.x_account_id,
+          query: p.query,
+          authorId: p.author_id,
+          authorUsername: p.author_username,
+          authorDisplayName: p.author_display_name,
+          authorProfileImageUrl: p.author_profile_image_url,
+          text: p.text,
+          createdAt: p.created_at,
+          discoveredAt: p.discovered_at,
+          commentary: p.commentary,
+          replyDraft: p.reply_draft,
+          publicMetrics: metrics,
+          // Extract author_description from metrics if it was stored there by the scheduled job
+          author_description: metrics?.author_description || null,
+        };
+      }),
     });
   } catch (err: any) {
     return c.json({ success: false, error: err.message ?? 'Failed to fetch collected posts' }, 500);

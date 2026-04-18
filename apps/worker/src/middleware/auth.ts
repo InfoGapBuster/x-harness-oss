@@ -5,7 +5,15 @@ import type { Env } from '../index.js';
 export async function authMiddleware(c: Context<Env>, next: Next): Promise<Response | void> {
   // Allow CORS preflight requests
   if (c.req.method === 'OPTIONS') {
-    return next();
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
   }
 
   const path = new URL(c.req.url).pathname;

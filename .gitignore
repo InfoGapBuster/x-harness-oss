@@ -8,3 +8,4 @@ out/
 *.tsbuildinfo
 .vercel/
 packages/mcp/dist/
+.mcp.json

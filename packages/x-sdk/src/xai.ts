@@ -1,10 +1,10 @@
-export interface GrokPostResult {
+export interface ClaudePostResult {
   id: string;
   text: string;
   author_id: string;
   author_username: string;
   author_display_name?: string;
-  author_description?: string; // 投稿者のプロフィール文
+  author_description?: string;
   created_at: string;
   public_metrics: {
     retweet_count: number;
@@ -12,42 +12,11 @@ export interface GrokPostResult {
     like_count: number;
     quote_count: number;
   };
-  commentary: string; // AIによる解説
-  reply_draft: string; // 引用RTや返信に使えるポスト案
+  commentary: string;
+  reply_draft: string;
 }
 
-export interface GrokConfig {
-  apiKey: string;
-  baseUrl?: string;
-}
-
-export class GrokClient {
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
-
-  constructor(config: GrokConfig) {
-    this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl ?? 'https://api.x.ai/v1';
-  }
-
-  /**
-   * 伊藤芳浩としての専門的知見に基づき、注目ポストを選定し解説と返信案を加える
-   */
-  async generateDailyReport(themes: Array<{ name: string; min_likes: number; min_retweets: number }>): Promise<GrokPostResult[]> {
-    const themeContext = themes.map(t => `${t.name} (基準: ${t.min_likes}いいね または ${t.min_retweets}RT以上)`).join('\n');
-
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'grok-3-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `あなたは「伊藤芳浩（いとうよしひろ）」として振る舞ってください。
+const SYSTEM_PROMPT = `あなたは「伊藤芳浩（いとうよしひろ）」として振る舞ってください。
 
 【あなたのプロフィール・専門性】
 - デフ（ろう者）の当事者であり、ダイバーシティ＆インクルージョン、ビジネスと人権、そして「手話」の専門家。
@@ -55,25 +24,33 @@ export class GrokClient {
 - 社会のバリアフリー化や、情報アクセシビリティの向上に情熱を注いでいる。
 - 語り口は論理的かつ誠実で、対立よりも共感と理解を促すスタイル。
 
-【タスク】
-以下のテーマについてXから最新の投稿を検索し、注目すべきポストを合計で10件選び、
-それぞれに対して専門的な解説と、それに対する「返信または引用RT」のドラフト案を作成してください。
-
-テーマと最低条件:
-${themeContext}
-
-【出力の必須要件】
-各ポストについて、以下の情報を必ず正確に抽出してください：
-1. 投稿者のユーザー名(@username)と表示名
-2. 投稿者のプロフィール文(Bio)
-3. リアルタイムのいいね数とリポスト数
-
 ドラフト案作成の指針:
 - 伊藤芳浩としての当事者性や、DEI（多様性・公平性・包摂）の観点から深く洞察のある内容にする。
 - 相手を否定せず、新しい視点を提供したり、活動を応援する温かいトーンを心がける。
-- 自然な日本語で、140文字以内とする。
+- 自然な日本語で、140文字以内とする。`;
 
-出力形式は必ず以下のJSON配列のみとしてください。
+export class ClaudeClient {
+  private readonly apiKey: string;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  async analyzePosts(posts: any[]): Promise<ClaudePostResult[]> {
+    if (posts.length === 0) return [];
+
+    const postsContext = posts.map((p, i) => `
+[Post ${i + 1}]
+ID: ${p.id}
+Author: ${p.author_display_name || p.author_username} (@${p.author_username})
+Text: ${p.text}
+Metrics: Likes: ${p.public_metrics?.like_count || 0}, RTs: ${p.public_metrics?.retweet_count || 0}
+`).join('\n');
+
+    const userPrompt = `以下の${posts.length}件のXポストを分析し、あなたの専門領域（ダイバーシティ、手話、人権、バリアフリー）において特に注目すべきポストを最大10件選んでください。
+
+各ポストについて提供された情報を正確に保持し（特にIDは完全一致）、以下のJSON配列のみを返してください：
+
 [
   {
     "id": "tweet_id",
@@ -81,58 +58,56 @@ ${themeContext}
     "author_id": "作成者ID",
     "author_username": "作成者ユーザー名",
     "author_display_name": "作成者表示名",
-    "author_description": "作成者のプロフィール文(Bio)",
+    "author_description": "",
     "created_at": "ISO8601日時",
     "public_metrics": { "retweet_count": 0, "reply_count": 0, "like_count": 0, "quote_count": 0 },
     "commentary": "伊藤芳浩としての解説（なぜこれが重要か、社会にどう響くか）",
-    "reply_draft": "伊藤芳浩としての返信/引用RT文案"
+    "reply_draft": "伊藤芳浩としての返信/引用RT文案（140文字以内）"
   }
-]`
-          },
-          {
-            role: 'user',
-            content: "今日の注目ポスト10選のレポートを作成してください。"
-          }
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' }
+]
+
+分析対象ポスト:
+${postsContext}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
       }),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Grok API error: ${response.status} ${text}`);
+      throw new Error(`Claude API error: ${response.status} ${text}`);
     }
 
     const data = await response.json() as any;
+    const content = data.content?.[0]?.text ?? '';
+    return this.parseResponse(content);
+  }
+
+  private parseResponse(text: string): ClaudePostResult[] {
     try {
-      const text = data.choices[0].message.content;
-      const content = JSON.parse(text);
-      
-      // Handle cases where the model returns { "posts": [...] } or { "results": [...] } or just [...]
-      let results = [];
-      if (Array.isArray(content)) {
-        results = content;
-      } else if (content.posts && Array.isArray(content.posts)) {
-        results = content.posts;
-      } else if (content.results && Array.isArray(content.results)) {
-        results = content.results;
-      } else if (typeof content === 'object') {
-        // Find any field that is an array
-        const arrayField = Object.values(content).find(v => Array.isArray(v));
-        if (arrayField) {
-          results = arrayField as any[];
-        }
-      }
-
-      if (results.length === 0) {
-        console.error('Grok returned no posts or invalid format:', text);
-      }
-
-      return results as GrokPostResult[];
+      const match = text.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('No JSON array found');
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed)) return parsed as ClaudePostResult[];
+      throw new Error('Response is not an array');
     } catch (e) {
-      console.error('Failed to parse Grok response:', data.choices[0].message.content);
-      throw new Error('Failed to parse Grok daily report results');
+      console.error('Failed to parse Claude response:', text.slice(0, 500));
+      throw new Error('Failed to parse Claude analysis results');
     }
   }
 }
+
+// 後方互換のため旧名でも参照できるようにする
+export { ClaudeClient as GrokClient };
+export type { ClaudePostResult as GrokPostResult };

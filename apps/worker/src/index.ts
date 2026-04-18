@@ -24,14 +24,14 @@ import { setup } from './routes/setup.js';
 import { searchThemes } from './routes/search-themes.js';
 import { processStepSequences } from './services/step-processor.js';
 import { getActiveSearchThemes, saveCollectedPosts } from '@x-harness/db';
-import { GrokClient } from '@x-harness/x-sdk';
+import { ClaudeClient } from '@x-harness/x-sdk';
 import { generateEmailReport, sendEmail } from './services/notifier.js';
 
 export type Env = {
   Bindings: {
     DB: D1Database;
     API_KEY: string;
-    XAI_API_KEY?: string; // xAI (Grok) API Key
+    ANTHROPIC_API_KEY?: string;
     RESEND_API_KEY?: string; // For email notifications
     NOTIFY_EMAIL?: string; // Destination email
     X_ACCESS_TOKEN: string;
@@ -196,58 +196,90 @@ async function scheduled(
     await processStepSequences(env.DB, buildXClient);
   }
 
-  // Daily Grok Search Report (6 AM JST)
-  // Check if it's around 6:00 AM JST (GMT+9)
+  // Daily Claude Search Report (6 AM JST)
   const now = new Date();
   const jstHour = (now.getUTCHours() + 9) % 24;
   const jstMinute = now.getUTCMinutes();
-  
-  // Run if it's 6:00 - 6:05 AM JST and enabled
-  const reportsEnabled = await getSettingBool(env.DB, 'auto_reports_enabled', false);
-  const xaiApiKey = env.XAI_API_KEY;
 
-  if (reportsEnabled && xaiApiKey && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
+  const reportsEnabled = await getSettingBool(env.DB, 'auto_reports_enabled', false);
+  const anthropicApiKey = env.ANTHROPIC_API_KEY;
+
+  if (reportsEnabled && anthropicApiKey && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
     try {
       const themes = await getActiveSearchThemes(env.DB);
       if (themes.length > 0) {
-        const grok = new GrokClient({ apiKey: xaiApiKey });
-        const report = await grok.generateDailyReport(themes.map(t => ({
-          name: t.name,
-          min_likes: t.min_likes,
-          min_retweets: t.min_retweets,
-        })));
+        const account = dbAccounts[0];
+        const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+          ? new XClient({
+              type: 'oauth1',
+              consumerKey: account.consumer_key,
+              consumerSecret: account.consumer_secret,
+              accessToken: account.access_token,
+              accessTokenSecret: account.access_token_secret,
+            })
+          : new XClient(account.access_token);
 
-        const toSave = report.map(p => ({
-          id: p.id,
-          authorId: p.author_id,
-          authorUsername: p.author_username,
-          authorDisplayName: p.author_display_name,
-          text: p.text,
-          createdAt: p.created_at,
-          publicMetrics: {
-            ...p.public_metrics,
-            author_description: p.author_description // Store in metrics for now to avoid schema change
-          },
-          commentary: p.commentary,
-          replyDraft: p.reply_draft,
-        }));
+        // 1. Fetch tweets for each theme
+        const allTweets: any[] = [];
+        for (const theme of themes) {
+          try {
+            const searchRes = await xClient.searchRecentTweets(theme.query);
+            if (searchRes.data && searchRes.data.length > 0) {
+              const usersMap = new Map(searchRes.includes?.users?.map((u: any) => [u.id, u]) || []);
+              const mapped = searchRes.data.map((t: any) => {
+                const user = usersMap.get(t.author_id);
+                return {
+                  id: t.id,
+                  text: t.text,
+                  author_id: t.author_id,
+                  author_username: user?.username,
+                  author_display_name: user?.name,
+                  public_metrics: t.public_metrics,
+                  created_at: t.created_at,
+                };
+              });
+              allTweets.push(...mapped);
+            }
+          } catch (err) {
+            console.error(`Scheduled search failed for theme ${theme.name}:`, err);
+          }
+        }
 
-        // Use the first account to store the global report
-        await saveCollectedPosts(env.DB, dbAccounts[0].id, 'daily_report', toSave);
+        if (allTweets.length > 0) {
+          // 2. Analyze with Claude
+          const claude = new ClaudeClient(anthropicApiKey);
+          const report = await claude.analyzePosts(allTweets.slice(0, 50));
 
-        // Send Email Notification
-        if (env.RESEND_API_KEY && env.NOTIFY_EMAIL) {
-          const emailContent = generateEmailReport(toSave);
-          await sendEmail(
-            env.RESEND_API_KEY,
-            env.NOTIFY_EMAIL,
-            `【X-Harness】今朝の注目ポストレポート (${new Date().toLocaleDateString('ja-JP')})`,
-            emailContent
-          );
+          const toSave = report.map((p: any) => ({
+            id: p.id,
+            authorId: p.author_id,
+            authorUsername: p.author_username,
+            authorDisplayName: p.author_display_name,
+            text: p.text,
+            createdAt: p.created_at,
+            publicMetrics: {
+              ...p.public_metrics,
+              author_description: p.author_description,
+            },
+            commentary: p.commentary,
+            replyDraft: p.reply_draft,
+          }));
+
+          await saveCollectedPosts(env.DB, account.id, 'daily_report', toSave);
+
+          if (env.RESEND_API_KEY && env.NOTIFY_EMAIL) {
+            const emailContent = generateEmailReport(toSave);
+            await sendEmail(
+              env.RESEND_API_KEY,
+              env.NOTIFY_EMAIL,
+              `【X-Harness】今朝の注目ポストレポート (${new Date().toLocaleDateString('ja-JP')})`,
+              emailContent
+            );
+          }
         }
       }
     } catch (err) {
-      console.error('Failed to generate daily Grok report:', err);
+      console.error('Failed to generate daily Claude report:', err);
     }
   }
 }
