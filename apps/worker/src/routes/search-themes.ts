@@ -44,13 +44,10 @@ searchThemes.delete('/api/search-themes/:id', async (c) => {
 });
 
 // POST /api/search-themes/run — Claude レポート生成
+// body に tweets[] を含めるとスクレイピングをスキップ（MCP ローカルツール用）
 searchThemes.post('/api/search-themes/run', async (c) => {
   const anthropicApiKey = c.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) return c.json({ success: false, error: 'ANTHROPIC_API_KEY not configured' }, 500);
-
-  const authToken = c.env.TWITTER_AUTH_TOKEN;
-  const ct0 = c.env.TWITTER_CT0;
-  if (!authToken || !ct0) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN / TWITTER_CT0 not configured' }, 500);
 
   const xAccountId = c.req.query('xAccountId');
   if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
@@ -58,31 +55,43 @@ searchThemes.post('/api/search-themes/run', async (c) => {
   const account = await getXAccountById(c.env.DB, xAccountId);
   if (!account) return c.json({ success: false, error: 'Account not found' }, 404);
 
-  const themes = await getActiveSearchThemes(c.env.DB);
-  if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
+  let allTweets: any[];
 
-  // 1. クッキー認証でツイートを取得
-  const allTweets: any[] = [];
-  const errors: string[] = [];
-  console.log(`[DEBUG] Fetching tweets for ${themes.length} themes via cookie auth`);
+  const body = await c.req.json<{ tweets?: any[] }>().catch(() => ({}));
 
-  for (const theme of themes) {
-    try {
-      const query = `${theme.query} lang:ja -filter:retweets`;
-      const tweets = await searchTweetsWithCookies(query, authToken, ct0);
-      console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets`);
-      allTweets.push(...tweets);
-    } catch (err: any) {
-      console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
-      errors.push(`${theme.name}: ${err.message}`);
+  if (body.tweets && body.tweets.length > 0) {
+    // MCP ローカルツールから直接ツイートが渡された場合
+    allTweets = body.tweets;
+    console.log(`[DEBUG] Using ${allTweets.length} pre-fetched tweets from request body`);
+  } else {
+    // フォールバック: サーバーサイドでクッキー認証スクレイピング
+    const authToken = c.env.TWITTER_AUTH_TOKEN;
+    const ct0 = c.env.TWITTER_CT0;
+    if (!authToken || !ct0) return c.json({ success: false, error: 'ローカルの MCP ツールから実行するか、TWITTER_AUTH_TOKEN / TWITTER_CT0 を設定してください' }, 500);
+
+    const themes = await getActiveSearchThemes(c.env.DB);
+    if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
+
+    allTweets = [];
+    const errors: string[] = [];
+    for (const theme of themes) {
+      try {
+        const query = `${theme.query} lang:ja -filter:retweets`;
+        const tweets = await searchTweetsWithCookies(query, authToken, ct0);
+        console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets`);
+        allTweets.push(...tweets);
+      } catch (err: any) {
+        console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
+        errors.push(`${theme.name}: ${err.message}`);
+      }
     }
-  }
 
-  if (allTweets.length === 0) {
-    const errorMsg = errors.length > 0
-      ? `ツイート取得エラー: ${errors[0]}`
-      : '条件に一致するポストが見つかりませんでした。';
-    return c.json({ success: false, error: errorMsg }, 402);
+    if (allTweets.length === 0) {
+      const errorMsg = errors.length > 0
+        ? `ツイート取得エラー: ${errors[0]}`
+        : '条件に一致するポストが見つかりませんでした。';
+      return c.json({ success: false, error: errorMsg }, 402);
+    }
   }
 
   // 2. Claude で分析
