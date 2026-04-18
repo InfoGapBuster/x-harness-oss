@@ -41,7 +41,7 @@ export default function DailyReportsPage() {
   }, [loadReports])
 
   const handleRunReport = async () => {
-    if (!selectedAccountId || !confirm('今すぐ最新のレポートを生成しますか？（Grok APIコストが発生します）')) return
+    if (!selectedAccountId || !confirm('今すぐ最新のレポートを生成しますか？（Claude APIコストが発生します）')) return
     setRunning(true)
     try {
       const res = await api.reports.run(selectedAccountId)

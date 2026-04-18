@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts, getXAccountById } from '@x-harness/db';
 import { ClaudeClient } from '@x-harness/x-sdk';
-import { searchTweetsWithCookies } from '../services/x-search.js';
+import { searchTweetsV1 } from '../services/x-search.js';
 import type { Env } from '../index.js';
 
 const searchThemes = new Hono<Env>();
@@ -48,28 +48,35 @@ searchThemes.post('/api/search-themes/run', async (c) => {
   const anthropicApiKey = c.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) return c.json({ success: false, error: 'ANTHROPIC_API_KEY not configured' }, 500);
 
-  const authToken = c.env.TWITTER_AUTH_TOKEN;
-  const ct0 = c.env.TWITTER_CT0;
-  if (!authToken || !ct0) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN / TWITTER_CT0 not configured' }, 500);
-
   const xAccountId = c.req.query('xAccountId');
   if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
 
   const account = await getXAccountById(c.env.DB, xAccountId);
   if (!account) return c.json({ success: false, error: 'Account not found' }, 404);
 
+  if (!account.consumer_key || !account.consumer_secret || !account.access_token_secret) {
+    return c.json({ success: false, error: 'OAuth 1.0a credentials (consumer_key, consumer_secret, access_token_secret) are required' }, 400);
+  }
+
+  const creds = {
+    consumerKey: account.consumer_key,
+    consumerSecret: account.consumer_secret,
+    accessToken: account.access_token,
+    accessTokenSecret: account.access_token_secret,
+  };
+
   const themes = await getActiveSearchThemes(c.env.DB);
   if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
 
-  // 1. クッキー認証でツイートを取得（X API クレジット不要）
+  // 1. OAuth 1.0a で X v1.1 API からツイートを取得
   const allTweets: any[] = [];
   const errors: string[] = [];
-  console.log(`[DEBUG] Fetching tweets for ${themes.length} themes via cookie auth`);
+  console.log(`[DEBUG] Fetching tweets for ${themes.length} themes via OAuth 1.0a`);
 
   for (const theme of themes) {
     try {
       const query = `${theme.query} lang:ja -filter:retweets`;
-      const tweets = await searchTweetsWithCookies(query, authToken, ct0);
+      const tweets = await searchTweetsV1(query, creds);
       console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets`);
       allTweets.push(...tweets);
     } catch (err: any) {

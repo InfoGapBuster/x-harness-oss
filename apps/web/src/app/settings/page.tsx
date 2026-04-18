@@ -69,7 +69,7 @@ export default function SettingsPage() {
   const toggleReports = async () => {
     const newValue = !reportsEnabled
     if (newValue && !confirm(
-      '⚠️ AIレポート生成を有効にすると Grok (xAI) API 使用料が発生します。\n\n' +
+      '⚠️ AIレポート生成を有効にすると Claude (Anthropic) API 使用料が発生します。\n\n' +
       '毎朝6時に最新ポストを収集し、AI解説と返信案を生成します。有効にしますか？'
     )) return
     setReportsSaving(true)
