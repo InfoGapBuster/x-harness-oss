@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts, getXAccountById } from '@x-harness/db';
-import { ClaudeClient, XClient } from '@x-harness/x-sdk';
+import { ClaudeClient } from '@x-harness/x-sdk';
+import { searchTweetsWithCookies } from '../services/x-search.js';
 import type { Env } from '../index.js';
 
 const searchThemes = new Hono<Env>();
@@ -27,7 +28,7 @@ searchThemes.post('/api/search-themes', async (c) => {
   return c.json({ success: true, data: theme }, 201);
 });
 
-// PUT /api/search-themes/:id — Update an existing search theme
+// PUT /api/search-themes/:id
 searchThemes.put('/api/search-themes/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<any>();
@@ -35,17 +36,21 @@ searchThemes.put('/api/search-themes/:id', async (c) => {
   return c.json({ success: true });
 });
 
-// DELETE /api/search-themes/:id — Delete a search theme
+// DELETE /api/search-themes/:id
 searchThemes.delete('/api/search-themes/:id', async (c) => {
   const id = c.req.param('id');
   await deleteSearchTheme(c.env.DB, id);
   return c.json({ success: true });
 });
 
-// POST /api/search-themes/run — Manually trigger Claude report generation
+// POST /api/search-themes/run — Claude レポート生成
 searchThemes.post('/api/search-themes/run', async (c) => {
   const anthropicApiKey = c.env.ANTHROPIC_API_KEY;
   if (!anthropicApiKey) return c.json({ success: false, error: 'ANTHROPIC_API_KEY not configured' }, 500);
+
+  const authToken = c.env.TWITTER_AUTH_TOKEN;
+  const ct0 = c.env.TWITTER_CT0;
+  if (!authToken || !ct0) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN / TWITTER_CT0 not configured' }, 500);
 
   const xAccountId = c.req.query('xAccountId');
   if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
@@ -56,42 +61,17 @@ searchThemes.post('/api/search-themes/run', async (c) => {
   const themes = await getActiveSearchThemes(c.env.DB);
   if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
 
-  const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
-    ? new XClient({
-        type: 'oauth1',
-        consumerKey: account.consumer_key,
-        consumerSecret: account.consumer_secret,
-        accessToken: account.access_token,
-        accessTokenSecret: account.access_token_secret,
-      })
-    : new XClient(account.access_token);
-
-  // 1. Fetch real tweets for each theme
+  // 1. クッキー認証でツイートを取得（X API クレジット不要）
   const allTweets: any[] = [];
   const errors: string[] = [];
-  console.log(`[DEBUG] Starting manual report run for ${themes.length} themes`);
+  console.log(`[DEBUG] Fetching tweets for ${themes.length} themes via cookie auth`);
 
   for (const theme of themes) {
     try {
-      const searchQuery = `${theme.query} lang:ja -is:retweet`;
-      const searchRes = await xClient.searchRecentTweets(searchQuery);
-
-      if (searchRes.data && searchRes.data.length > 0) {
-        const usersMap = new Map(searchRes.includes?.users?.map((u: any) => [u.id, u]) || []);
-        const mapped = searchRes.data.map((t: any) => {
-          const user = usersMap.get(t.author_id);
-          return {
-            id: t.id,
-            text: t.text,
-            author_id: t.author_id,
-            author_username: user?.username,
-            author_display_name: user?.name,
-            public_metrics: t.public_metrics,
-            created_at: t.created_at,
-          };
-        });
-        allTweets.push(...mapped);
-      }
+      const query = `${theme.query} lang:ja -filter:retweets`;
+      const tweets = await searchTweetsWithCookies(query, authToken, ct0);
+      console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets`);
+      allTweets.push(...tweets);
     } catch (err: any) {
       console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
       errors.push(`${theme.name}: ${err.message}`);
@@ -100,17 +80,17 @@ searchThemes.post('/api/search-themes/run', async (c) => {
 
   if (allTweets.length === 0) {
     const errorMsg = errors.length > 0
-      ? `X APIエラーが発生しました: ${errors[0]}`
+      ? `ツイート取得エラー: ${errors[0]}`
       : '条件に一致するポストが見つかりませんでした。';
     return c.json({ success: false, error: errorMsg }, 402);
   }
 
-  // 2. Analyze with Claude
+  // 2. Claude で分析
   const claude = new ClaudeClient(anthropicApiKey);
   try {
-    console.log(`[DEBUG] Sending ${allTweets.length} tweets to Claude for analysis`);
+    console.log(`[DEBUG] Sending ${allTweets.length} tweets to Claude`);
     const report = await claude.analyzePosts(allTweets.slice(0, 50));
-    console.log(`[DEBUG] Claude selected ${report.length} posts for the report`);
+    console.log(`[DEBUG] Claude selected ${report.length} posts`);
 
     const toSave = report.map(p => ({
       id: p.id,
@@ -128,7 +108,6 @@ searchThemes.post('/api/search-themes/run', async (c) => {
     }));
 
     await saveCollectedPosts(c.env.DB, xAccountId, 'daily_report', toSave);
-
     return c.json({ success: true, data: { count: toSave.length } });
   } catch (err: any) {
     console.error(`[ERROR] Claude analysis failed:`, err.message);

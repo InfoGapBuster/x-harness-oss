@@ -25,6 +25,7 @@ import { searchThemes } from './routes/search-themes.js';
 import { processStepSequences } from './services/step-processor.js';
 import { getActiveSearchThemes, saveCollectedPosts } from '@x-harness/db';
 import { ClaudeClient } from '@x-harness/x-sdk';
+import { searchTweetsWithCookies } from './services/x-search.js';
 import { generateEmailReport, sendEmail } from './services/notifier.js';
 
 export type Env = {
@@ -32,6 +33,8 @@ export type Env = {
     DB: D1Database;
     API_KEY: string;
     ANTHROPIC_API_KEY?: string;
+    TWITTER_AUTH_TOKEN?: string;
+    TWITTER_CT0?: string;
     RESEND_API_KEY?: string; // For email notifications
     NOTIFY_EMAIL?: string; // Destination email
     X_ACCESS_TOKEN: string;
@@ -203,43 +206,22 @@ async function scheduled(
 
   const reportsEnabled = await getSettingBool(env.DB, 'auto_reports_enabled', false);
   const anthropicApiKey = env.ANTHROPIC_API_KEY;
+  const authToken = env.TWITTER_AUTH_TOKEN;
+  const ct0 = env.TWITTER_CT0;
 
-  if (reportsEnabled && anthropicApiKey && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
+  if (reportsEnabled && anthropicApiKey && authToken && ct0 && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
     try {
       const themes = await getActiveSearchThemes(env.DB);
       if (themes.length > 0) {
         const account = dbAccounts[0];
-        const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
-          ? new XClient({
-              type: 'oauth1',
-              consumerKey: account.consumer_key,
-              consumerSecret: account.consumer_secret,
-              accessToken: account.access_token,
-              accessTokenSecret: account.access_token_secret,
-            })
-          : new XClient(account.access_token);
 
-        // 1. Fetch tweets for each theme
+        // 1. クッキー認証でツイートを取得（X API クレジット不要）
         const allTweets: any[] = [];
         for (const theme of themes) {
           try {
-            const searchRes = await xClient.searchRecentTweets(theme.query);
-            if (searchRes.data && searchRes.data.length > 0) {
-              const usersMap = new Map(searchRes.includes?.users?.map((u: any) => [u.id, u]) || []);
-              const mapped = searchRes.data.map((t: any) => {
-                const user = usersMap.get(t.author_id);
-                return {
-                  id: t.id,
-                  text: t.text,
-                  author_id: t.author_id,
-                  author_username: user?.username,
-                  author_display_name: user?.name,
-                  public_metrics: t.public_metrics,
-                  created_at: t.created_at,
-                };
-              });
-              allTweets.push(...mapped);
-            }
+            const query = `${theme.query} lang:ja -filter:retweets`;
+            const tweets = await searchTweetsWithCookies(query, authToken, ct0);
+            allTweets.push(...tweets);
           } catch (err) {
             console.error(`Scheduled search failed for theme ${theme.name}:`, err);
           }
