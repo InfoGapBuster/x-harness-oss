@@ -2,6 +2,51 @@
 const TWITTER_BEARER =
   'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I%2FDex%2Bu0AQDE%3DAFBUEGxNLH4gZEFCpGbxC3mhFiKv4FAQK9hqFZBlUCEY4xLAVg';
 
+const COOKIE_HEADERS = (authToken: string, ct0: string) => ({
+  'Authorization': `Bearer ${TWITTER_BEARER}`,
+  'Cookie': `auth_token=${authToken}; ct0=${ct0}`,
+  'X-Csrf-Token': ct0,
+  'X-Twitter-Active-User': 'yes',
+  'X-Twitter-Auth-Type': 'OAuth2Session',
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Referer': 'https://x.com/',
+});
+
+export async function createTweetWithCookies(
+  text: string,
+  authToken: string,
+  ct0: string,
+  options: { replyToId?: string; quoteTweetId?: string } = {},
+): Promise<{ id: string; text: string }> {
+  // For quote RT: append the original tweet URL — X renders it as an embedded quote
+  const fullText = options.quoteTweetId ? `${text}\nhttps://x.com/i/status/${options.quoteTweetId}` : text;
+
+  const body = new URLSearchParams();
+  body.set('status', fullText);
+  body.set('tweet_mode', 'extended');
+  if (options.replyToId) {
+    body.set('in_reply_to_status_id', options.replyToId);
+    body.set('auto_populate_reply_metadata', 'true');
+  }
+
+  const res = await fetch('https://api.twitter.com/1.1/statuses/update.json', {
+    method: 'POST',
+    headers: {
+      ...COOKIE_HEADERS(authToken, ct0),
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`X API POST /1.1/statuses/update failed: ${res.status} ${err.slice(0, 300)}`);
+  }
+
+  const data = await res.json() as { id_str: string; full_text?: string; text?: string };
+  return { id: data.id_str, text: data.full_text ?? data.text ?? '' };
+}
+
 export async function searchTweetsWithCookies(
   query: string,
   authToken: string,

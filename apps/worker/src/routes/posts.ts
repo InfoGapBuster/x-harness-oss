@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { XClient } from '@x-harness/x-sdk';
 import { createScheduledPost, getScheduledPosts, deleteScheduledPost, getXAccountById, getXAccounts, incrementApiUsage, saveQuoteTweets, getQuoteTweetsByAccount, getQuoteTweetsBySource, getLatestDiscoveredAt, recordAction, getActions, saveCollectedPosts, getCollectedPosts, deleteCollectedPost } from '@x-harness/db';
+import { createTweetWithCookies } from '../services/x-search.js';
 import type { SaveQuoteTweetInput, SaveCollectedPostInput } from '@x-harness/db';
 import type { Env } from '../index.js';
 
@@ -24,13 +25,11 @@ posts.post('/api/posts', async (c) => {
   if (!text || !xAccountId) return c.json({ success: false, error: 'Missing required fields: xAccountId, text' }, 400);
   const account = await getXAccountById(c.env.DB, xAccountId);
   if (!account) return c.json({ success: false, error: 'X account not found' }, 404);
-  const xClient = buildXClient(account);
+  const authToken = c.env.TWITTER_AUTH_TOKEN;
+  const ct0 = c.env.TWITTER_CT0;
+  if (!authToken || !ct0) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN / TWITTER_CT0 not configured' }, 500);
   try {
-    const tweet = await xClient.createTweet({
-      text,
-      media: mediaIds ? { media_ids: mediaIds } : undefined,
-      quote_tweet_id: quoteTweetId,
-    });
+    const tweet = await createTweetWithCookies(text, authToken, ct0, { quoteTweetId });
     c.executionCtx.waitUntil(incrementApiUsage(c.env.DB, account.id, 'create_tweet'));
     return c.json({ success: true, data: tweet }, 201);
   } catch (err: any) {
@@ -334,9 +333,11 @@ posts.post('/api/posts/:id/reply', async (c) => {
   if (!xAccountId || !text) return c.json({ success: false, error: 'Missing required fields: xAccountId, text' }, 400);
   const account = await getXAccountById(c.env.DB, xAccountId);
   if (!account) return c.json({ success: false, error: 'X account not found' }, 404);
-  const xClient = buildXClient(account);
+  const authToken = c.env.TWITTER_AUTH_TOKEN;
+  const ct0 = c.env.TWITTER_CT0;
+  if (!authToken || !ct0) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN / TWITTER_CT0 not configured' }, 500);
   try {
-    const tweet = await xClient.createTweet({ text, reply: { in_reply_to_tweet_id: tweetId } });
+    const tweet = await createTweetWithCookies(text, authToken, ct0, { replyToId: tweetId });
     c.executionCtx.waitUntil(recordAction(c.env.DB, { xAccountId, tweetId, actionType: 'reply' }));
     return c.json({ success: true, data: tweet }, 201);
   } catch (err: any) {
