@@ -37,6 +37,36 @@ posts.post('/api/posts', async (c) => {
   }
 });
 
+// POST /api/posts/pending — save a tweet draft to execute later via MCP
+posts.post('/api/posts/pending', async (c) => {
+  const { xAccountId, text, actionType, targetTweetId } =
+    await c.req.json<{ xAccountId: string; text: string; actionType: 'reply' | 'quote' | 'new'; targetTweetId?: string }>();
+  if (!xAccountId || !text) return c.json({ success: false, error: 'xAccountId, text required' }, 400);
+  const id = crypto.randomUUID();
+  await saveCollectedPosts(c.env.DB, xAccountId, 'pending_post', [{
+    id,
+    authorId: targetTweetId ?? '',
+    text,
+    createdAt: new Date().toISOString(),
+    commentary: actionType,
+    replyDraft: targetTweetId ?? null,
+  }]);
+  return c.json({ success: true, data: { id } }, 201);
+});
+
+// GET /api/posts/pending — list pending posts for an account
+posts.get('/api/posts/pending', async (c) => {
+  const xAccountId = c.req.query('xAccountId');
+  const posts_list = await getCollectedPosts(c.env.DB, xAccountId, { query: 'pending_post', limit: 50 });
+  return c.json({ success: true, data: posts_list });
+});
+
+// DELETE /api/posts/pending/:id — remove a pending post (after posting or cancel)
+posts.delete('/api/posts/pending/:id', async (c) => {
+  await deleteCollectedPost(c.env.DB, c.req.param('id'));
+  return c.json({ success: true });
+});
+
 posts.post('/api/posts/schedule', async (c) => {
   const { xAccountId, text, scheduledAt, mediaIds } = await c.req.json<{
     xAccountId: string; text: string; scheduledAt: string; mediaIds?: string[];

@@ -288,6 +288,8 @@ export const api = {
     },
     reply: (tweetId: string, data: { xAccountId: string; text: string }) =>
       fetchApi<ApiResponse<TweetHistory>>(`/api/posts/${tweetId}/reply`, { method: 'POST', body: JSON.stringify(data) }),
+    savePending: (data: { xAccountId: string; text: string; actionType: 'reply' | 'quote' | 'new'; targetTweetId?: string }) =>
+      fetchApi<ApiResponse<{ id: string }>>('/api/posts/pending', { method: 'POST', body: JSON.stringify(data) }),
     like: (tweetId: string, xAccountId: string) =>
       fetchApi<ApiResponse<void>>(`/api/posts/${tweetId}/like`, { method: 'POST', body: JSON.stringify({ xAccountId }) }),
     retweet: (tweetId: string, xAccountId: string) =>

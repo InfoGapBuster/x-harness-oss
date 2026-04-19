@@ -15,6 +15,7 @@ import { campaignToolDefs } from './tools/campaign.js';
 import { usageToolDefs } from './tools/usage.js';
 import { xSearchToolDefs, handleXSearchTool } from './tools/x-search.js';
 import { reportToolDefs, handleReportTool } from './tools/report.js';
+import { tweetPostToolDefs, handlePostTool } from './tools/post.js';
 
 const API_URL = process.env.X_HARNESS_API_URL ?? 'http://localhost:8787';
 const API_KEY = process.env.X_HARNESS_API_KEY ?? '';
@@ -34,6 +35,7 @@ const allTools = [
   ...usageToolDefs,
   ...xSearchToolDefs,
   ...reportToolDefs,
+  ...tweetPostToolDefs,
 ];
 
 const server = new Server({ name: 'x-harness', version: '0.1.0' }, { capabilities: { tools: {} } });
@@ -245,6 +247,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text' as const, text: await handleXSearchTool(name, a) }] };
       case 'generate_daily_report':
         return { content: [{ type: 'text' as const, text: await handleReportTool(name, a, client) }] };
+      case 'post_tweet':
+      case 'execute_pending_posts':
+        return { content: [{ type: 'text' as const, text: await handlePostTool(name, a, client) }] };
       default:
         return { content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }], isError: true };
     }

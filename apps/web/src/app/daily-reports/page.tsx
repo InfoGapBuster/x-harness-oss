@@ -51,19 +51,18 @@ export default function DailyReportsPage() {
     if (!selectedAccountId || !replyTarget || !replyText.trim()) return
     setPosting(true)
     try {
-      let res
-      if (replyType === 'reply') {
-        res = await api.posts.reply(replyTarget.id, { xAccountId: selectedAccountId, text: replyText })
-      } else {
-        res = await api.posts.create({ xAccountId: selectedAccountId, text: replyText, quoteTweetId: replyTarget.id })
-      }
-
+      const res = await api.posts.savePending({
+        xAccountId: selectedAccountId,
+        text: replyText,
+        actionType: replyType,
+        targetTweetId: replyTarget.id,
+      })
       if (res.success) {
-        alert('投稿しました')
+        alert('投稿待ちに追加しました。Claude Code で「ペンディングの投稿を実行して」と入力してください。')
         setReplyTarget(null)
         setReplyText('')
       } else {
-        alert('投稿に失敗しました: ' + (res.error || 'unknown'))
+        alert('失敗しました: ' + ((res as any).error || 'unknown'))
       }
     } catch (err: any) {
       alert('エラー: ' + err.message)
@@ -106,7 +105,7 @@ export default function DailyReportsPage() {
                 disabled={posting || !replyText.trim()}
                 className="bg-blue-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 shadow-md transition-all active:scale-95"
               >
-                {posting ? '投稿中...' : 'この内容で X に投稿する'}
+                {posting ? '追加中...' : '投稿待ちに追加'}
               </button>
             </div>
           </form>
