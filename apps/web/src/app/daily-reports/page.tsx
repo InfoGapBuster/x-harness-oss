@@ -10,7 +10,6 @@ export default function DailyReportsPage() {
   const selectedAccountId = useCurrentAccountId()
   const [reports, setReports] = useState<CollectedPost[]>([])
   const [loading, setLoading] = useState(false)
-  const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
 
   const [replyTarget, setReplyTarget] = useState<CollectedPost | null>(null)
@@ -39,22 +38,6 @@ export default function DailyReportsPage() {
   useEffect(() => {
     loadReports()
   }, [loadReports])
-
-  const handleRunReport = async () => {
-    if (!selectedAccountId || !confirm('今すぐ最新のレポートを生成しますか？（Claude APIコストが発生します）')) return
-    setRunning(true)
-    try {
-      const res = await api.reports.run(selectedAccountId)
-      if (res.success) {
-        alert(`${res.data.count}件のポストを収集しました`)
-        loadReports()
-      }
-    } catch (err: any) {
-      alert('レポート生成に失敗しました: ' + err.message)
-    } finally {
-      setRunning(false)
-    }
-  }
 
   const prepareAction = (post: CollectedPost, type: 'reply' | 'quote') => {
     setReplyTarget(post)
@@ -130,20 +113,9 @@ export default function DailyReportsPage() {
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <div>
-          <h2 className="text-xl font-extrabold text-gray-900">今日の注目ポスト</h2>
-          <p className="text-sm text-gray-500">テーマ: ダイバーシティ、インクルージョン、人権、手話</p>
-        </div>
-        <button
-          onClick={handleRunReport}
-          disabled={running || !selectedAccountId}
-          className="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-5 py-2.5 rounded-full font-bold transition-all flex items-center gap-2 border border-blue-100"
-        >
-          {running ? (
-            <><div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div> 生成中...</>
-          ) : '🔄 今すぐ更新'}
-        </button>
+      <div className="mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <h2 className="text-xl font-extrabold text-gray-900">今日の注目ポスト</h2>
+        <p className="text-sm text-gray-500">テーマ: ダイバーシティ、インクルージョン、人権、手話</p>
       </div>
 
       {loading ? (

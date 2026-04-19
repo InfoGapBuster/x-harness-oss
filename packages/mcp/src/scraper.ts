@@ -14,6 +14,8 @@ export async function getScraper(): Promise<Scraper> {
 
   if (authToken && ct0) {
     await _scraper.setCookies([
+      `auth_token=${authToken}; Domain=.x.com; Path=/; Secure; HttpOnly`,
+      `ct0=${ct0}; Domain=.x.com; Path=/; Secure`,
       `auth_token=${authToken}; Domain=.twitter.com; Path=/; Secure; HttpOnly`,
       `ct0=${ct0}; Domain=.twitter.com; Path=/; Secure`,
     ]);
