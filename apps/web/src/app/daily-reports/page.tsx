@@ -118,6 +118,12 @@ export default function DailyReportsPage() {
         <p className="text-sm text-gray-500">テーマ: ダイバーシティ、インクルージョン、人権、手話</p>
       </div>
 
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-6">
           {[...Array(3)].map((_, i) => (
@@ -127,7 +133,7 @@ export default function DailyReportsPage() {
       ) : reports.length === 0 ? (
         <div className="bg-white border-2 border-dashed rounded-2xl p-20 text-center text-gray-400">
           <p className="text-lg">まだレポートが生成されていません。</p>
-          <p className="text-sm mt-2">右上のボタンを押して、今日の分析を開始しましょう。</p>
+          <p className="text-sm mt-2">Claude Code から generate_daily_report を実行してください。</p>
         </div>
       ) : (
         <div className="space-y-8">
