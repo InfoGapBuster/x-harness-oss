@@ -35,7 +35,7 @@ export default function DailyReportsPage() {
     try {
       const res = await api.posts.executePending(selectedAccountId)
       if (res.success) {
-        setExecuteResults(res.data?.results ?? [])
+        setExecuteResults((res.data as any) ?? [])
         setPendingPosts([])
       } else {
         alert('実行失敗: ' + ((res as any).error || 'unknown'))
@@ -267,18 +267,27 @@ export default function DailyReportsPage() {
                 )}
 
                 {/* 5. Action Buttons */}
-                <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-3 gap-3 pt-2">
                   <button
                     onClick={() => prepareAction(post, 'reply')}
-                    className="flex items-center justify-center gap-2 bg-white border-2 border-blue-500 text-blue-600 hover:bg-blue-50 py-3 rounded-xl text-sm font-black transition-all active:scale-95"
+                    className="flex items-center justify-center gap-1 bg-white border-2 border-blue-500 text-blue-600 hover:bg-blue-50 py-3 rounded-xl text-sm font-black transition-all active:scale-95"
                   >
-                    💬 返信案をセット
+                    💬 返信案
                   </button>
                   <button
                     onClick={() => prepareAction(post, 'quote')}
-                    className="flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 py-3 rounded-xl text-sm font-black shadow-lg shadow-blue-200 transition-all active:scale-95"
+                    className="flex items-center justify-center gap-1 bg-blue-600 text-white hover:bg-blue-700 py-3 rounded-xl text-sm font-black shadow-lg shadow-blue-200 transition-all active:scale-95"
                   >
-                    🔁 引用RT案をセット
+                    🔁 引用RT
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await api.reports.dismiss(post.id)
+                      setReports(prev => prev.filter(r => r.id !== post.id))
+                    }}
+                    className="flex items-center justify-center gap-1 bg-white border-2 border-gray-300 text-gray-400 hover:bg-gray-50 hover:text-gray-600 py-3 rounded-xl text-sm font-black transition-all active:scale-95"
+                  >
+                    ✕ 対応不要
                   </button>
                 </div>
                 

@@ -25,7 +25,7 @@ import { searchThemes } from './routes/search-themes.js';
 import { processStepSequences } from './services/step-processor.js';
 import { getActiveSearchThemes, saveCollectedPosts } from '@x-harness/db';
 import { ClaudeClient } from '@x-harness/x-sdk';
-import { searchTweetsWithCookies } from './services/x-search.js';
+import { searchTweetsWithCookies, refreshCt0 } from './services/x-search.js';
 import { generateEmailReport, sendEmail } from './services/notifier.js';
 
 export type Env = {
@@ -207,13 +207,13 @@ async function scheduled(
   const reportsEnabled = await getSettingBool(env.DB, 'auto_reports_enabled', false);
   const anthropicApiKey = env.ANTHROPIC_API_KEY;
   const authToken = env.TWITTER_AUTH_TOKEN;
-  const ct0 = env.TWITTER_CT0;
 
-  if (reportsEnabled && anthropicApiKey && authToken && ct0 && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
+  if (reportsEnabled && anthropicApiKey && authToken && jstHour === 6 && jstMinute < 10 && dbAccounts.length > 0) {
     try {
       const themes = await getActiveSearchThemes(env.DB);
       if (themes.length > 0) {
         const account = dbAccounts[0];
+        const ct0 = await refreshCt0(authToken);
 
         // 1. クッキー認証でツイートを取得
         const allTweets: any[] = [];

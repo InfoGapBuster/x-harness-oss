@@ -28,19 +28,24 @@ export async function handleReportTool(
   const maxPerTheme: number = a.maxPerTheme ?? 30;
 
   // 1. アクティブなテーマ一覧を取得
-  const themesRes = await client.get<{ success: boolean; data: Array<{ id: string; name: string; query: string }> }>('/api/search-themes');
+  const themesRes = await client.get<{ success: boolean; data: Array<{ id: string; name: string; query: string; min_likes: number; min_retweets: number; is_active: number }> }>('/api/search-themes');
   const themes = themesRes.data.filter((t: any) => t.is_active !== 0);
   if (themes.length === 0) return 'アクティブな検索テーマがありません。ダッシュボードでテーマを追加してください。';
 
-  // 2. ローカルスクレイパーで各テーマを検索
+  // 2. ローカルスクレイパーで各テーマを検索（閾値でフィルター）
   const scraper = await getScraper();
   const allTweets: any[] = [];
 
   for (const theme of themes) {
     const query = `${theme.query} lang:ja -filter:retweets`;
+    const minLikes = theme.min_likes ?? 0;
+    const minRetweets = theme.min_retweets ?? 0;
     try {
       let count = 0;
-      for await (const tweet of scraper.searchTweets(query, maxPerTheme, SearchMode.Latest)) {
+      for await (const tweet of scraper.searchTweets(query, maxPerTheme * 3, SearchMode.Latest)) {
+        const likes = tweet.likes ?? 0;
+        const retweets = tweet.retweets ?? 0;
+        if (likes < minLikes || retweets < minRetweets) continue;
         allTweets.push({
           id: tweet.id ?? '',
           text: tweet.text ?? '',
@@ -48,8 +53,8 @@ export async function handleReportTool(
           author_username: tweet.username ?? '',
           author_display_name: tweet.name ?? '',
           public_metrics: {
-            like_count: tweet.likes ?? 0,
-            retweet_count: tweet.retweets ?? 0,
+            like_count: likes,
+            retweet_count: retweets,
             reply_count: tweet.replies ?? 0,
             quote_count: tweet.bookmarkCount ?? 0,
           },
@@ -58,6 +63,7 @@ export async function handleReportTool(
         count++;
         if (count >= maxPerTheme) break;
       }
+      console.error(`[report] "${theme.name}": ${count} 件 (min_likes≥${minLikes}, min_retweets≥${minRetweets})`);
     } catch (err: any) {
       console.error(`[report] Search failed for theme "${theme.name}":`, err.message);
     }

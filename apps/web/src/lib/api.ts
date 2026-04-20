@@ -431,5 +431,7 @@ export const api = {
     },
     run: (xAccountId: string) =>
       fetchApi<ApiResponse<{ count: number }>>(`/api/search-themes/run?xAccountId=${xAccountId}`, { method: 'POST' }),
+    dismiss: (id: string) =>
+      fetchApi<ApiResponse<void>>(`/api/posts/collected/${id}`, { method: 'DELETE' }),
   },
 };
