@@ -1,9 +1,28 @@
 import { getScraper } from '../scraper.js';
+import { saveCookieCache } from '../browser-auth.js';
 import type { XHarnessClient } from '../client.js';
 
 const TWITTER_BEARER =
-  'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I%2FDex%2Bu0AQDE%3DAFBUEGxNLH4gZEFCpGbxC3mhFiKv4FAQK9hqFZBlUCEY4xLAVg';
+  'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+const TWITTER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
 const CREATE_TWEET_QUERY_ID = 'SoVnbfCycZ7fERGCwpZkYA';
+
+async function refreshCt0(authToken: string): Promise<string> {
+  const res = await fetch('https://x.com/i/api/1.1/account/verify_credentials.json', {
+    headers: {
+      'Authorization': `Bearer ${TWITTER_BEARER}`,
+      'Cookie': `auth_token=${authToken}`,
+      'User-Agent': TWITTER_UA,
+      'x-twitter-active-user': 'yes',
+      'x-twitter-auth-type': 'OAuth2Session',
+    },
+  });
+  const ct0 = res.headers.getSetCookie?.()
+    ?.find(c => c.startsWith('ct0='))?.split(';')[0]?.split('=')[1];
+  if (!ct0) throw new Error('ct0 の更新に失敗しました');
+  return ct0;
+}
 
 export const tweetPostToolDefs = [
   {
@@ -39,8 +58,11 @@ async function postTweetWithScraper(
   const scraper = await getScraper();
   const cookies = await scraper.getCookies();
   const authToken = cookies.find((c: any) => c.key === 'auth_token')?.value;
-  const ct0 = cookies.find((c: any) => c.key === 'ct0')?.value;
-  if (!authToken || !ct0) throw new Error('Twitter 認証クッキーが取得できません。TWITTER_USERNAME / TWITTER_PASSWORD を確認してください。');
+  if (!authToken) throw new Error('Twitter 認証クッキーが取得できません。TWITTER_USERNAME / TWITTER_PASSWORD を確認してください。');
+
+  // ct0 は X セッションごとに更新されるため、毎回 GET で最新値を取得する
+  const ct0 = await refreshCt0(authToken);
+  saveCookieCache(authToken, ct0);
 
   const tweetText = options.quoteTweetId ? `${text}\nhttps://x.com/i/status/${options.quoteTweetId}` : text;
   const variables: Record<string, any> = {
@@ -58,13 +80,18 @@ async function postTweetWithScraper(
     headers: {
       'Authorization': `Bearer ${TWITTER_BEARER}`,
       'Cookie': `auth_token=${authToken}; ct0=${ct0}`,
-      'X-Csrf-Token': ct0,
+      'x-csrf-token': ct0,
       'Content-Type': 'application/json',
-      'Origin': 'https://x.com',
-      'Referer': 'https://x.com/',
-      'X-Twitter-Active-User': 'yes',
-      'X-Twitter-Auth-Type': 'OAuth2Session',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'origin': 'https://x.com',
+      'referer': 'https://x.com/',
+      'x-twitter-active-user': 'yes',
+      'x-twitter-auth-type': 'OAuth2Session',
+      'User-Agent': TWITTER_UA,
+      'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-site': 'same-site',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-dest': 'empty',
     },
     body: JSON.stringify({
       variables,
