@@ -78,8 +78,12 @@ searchThemes.post('/api/search-themes/run', async (c) => {
       try {
         const query = `${theme.query} lang:ja -filter:retweets`;
         const tweets = await searchTweetsWithCookies(query, authToken, ct0);
-        console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets`);
-        allTweets.push(...tweets);
+        const filtered = tweets.filter(t =>
+          (t.public_metrics?.like_count ?? 0) >= (theme.min_likes ?? 0) &&
+          (t.public_metrics?.retweet_count ?? 0) >= (theme.min_retweets ?? 0)
+        );
+        console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets → ${filtered.length} after filter`);
+        allTweets.push(...filtered);
       } catch (err: any) {
         console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
         errors.push(`${theme.name}: ${err.message}`);

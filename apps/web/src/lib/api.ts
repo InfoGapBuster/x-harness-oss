@@ -290,6 +290,10 @@ export const api = {
       fetchApi<ApiResponse<TweetHistory>>(`/api/posts/${tweetId}/reply`, { method: 'POST', body: JSON.stringify(data) }),
     savePending: (data: { xAccountId: string; text: string; actionType: 'reply' | 'quote' | 'new'; targetTweetId?: string }) =>
       fetchApi<ApiResponse<{ id: string }>>('/api/posts/pending', { method: 'POST', body: JSON.stringify(data) }),
+    listPending: (xAccountId: string) =>
+      fetchApi<ApiResponse<CollectedPost[]>>(`/api/posts/pending?xAccountId=${xAccountId}`),
+    executePending: (xAccountId: string) =>
+      fetchApi<ApiResponse<{ results: { text: string; success: boolean; url?: string; error?: string }[] }>>('/api/posts/pending/execute', { method: 'POST', body: JSON.stringify({ xAccountId }) }),
     like: (tweetId: string, xAccountId: string) =>
       fetchApi<ApiResponse<void>>(`/api/posts/${tweetId}/like`, { method: 'POST', body: JSON.stringify({ xAccountId }) }),
     retweet: (tweetId: string, xAccountId: string) =>

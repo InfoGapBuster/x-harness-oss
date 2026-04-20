@@ -39,6 +39,9 @@ export class ClaudeClient {
   async analyzePosts(posts: any[]): Promise<ClaudePostResult[]> {
     if (posts.length === 0) return [];
 
+    // いいね0件は広告・無関係投稿が多いためスキップ
+    posts = posts.filter(p => (p.public_metrics?.like_count ?? 0) > 0);
+
     const postsContext = posts.map((p, i) => `
 [Post ${i + 1}]
 ID: ${p.id}
@@ -91,7 +94,15 @@ ${postsContext}`;
 
     const data = await response.json() as any;
     const content = data.content?.[0]?.text ?? '';
-    return this.parseResponse(content);
+    const results = this.parseResponse(content);
+
+    // created_at はClaude任せにせず元データから補完する
+    const originalById = new Map(posts.map(p => [p.id, p]));
+    for (const r of results) {
+      const orig = originalById.get(r.id);
+      if (orig?.created_at) r.created_at = orig.created_at;
+    }
+    return results;
   }
 
   private parseResponse(text: string): ClaudePostResult[] {

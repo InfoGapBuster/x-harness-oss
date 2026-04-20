@@ -221,7 +221,11 @@ async function scheduled(
           try {
             const query = `${theme.query} lang:ja -filter:retweets`;
             const tweets = await searchTweetsWithCookies(query, authToken, ct0);
-            allTweets.push(...tweets);
+            const filtered = tweets.filter((t: any) =>
+              (t.public_metrics?.like_count ?? 0) >= (theme.min_likes ?? 0) &&
+              (t.public_metrics?.retweet_count ?? 0) >= (theme.min_retweets ?? 0)
+            );
+            allTweets.push(...filtered);
           } catch (err) {
             console.error(`Scheduled search failed for theme ${theme.name}:`, err);
           }

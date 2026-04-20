@@ -1,16 +1,40 @@
-// Twitter web app bearer token (public, same value used by all browser sessions)
 const TWITTER_BEARER =
-  'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I%2FDex%2Bu0AQDE%3DAFBUEGxNLH4gZEFCpGbxC3mhFiKv4FAQK9hqFZBlUCEY4xLAVg';
+  'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+const TWITTER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
 
 const COOKIE_HEADERS = (authToken: string, ct0: string) => ({
   'Authorization': `Bearer ${TWITTER_BEARER}`,
   'Cookie': `auth_token=${authToken}; ct0=${ct0}`,
-  'X-Csrf-Token': ct0,
-  'X-Twitter-Active-User': 'yes',
-  'X-Twitter-Auth-Type': 'OAuth2Session',
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Referer': 'https://x.com/',
+  'x-csrf-token': ct0,
+  'x-twitter-active-user': 'yes',
+  'x-twitter-auth-type': 'OAuth2Session',
+  'x-twitter-client-language': 'ja',
+  'User-Agent': TWITTER_UA,
+  'sec-ch-ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
+  'sec-ch-ua-platform': '"Windows"',
+  'origin': 'https://x.com',
+  'referer': 'https://x.com/',
+  'sec-fetch-site': 'same-site',
+  'sec-fetch-mode': 'cors',
+  'sec-fetch-dest': 'empty',
 });
+
+export async function refreshCt0(authToken: string): Promise<string> {
+  const res = await fetch('https://x.com/i/api/1.1/account/verify_credentials.json', {
+    headers: {
+      'Authorization': `Bearer ${TWITTER_BEARER}`,
+      'Cookie': `auth_token=${authToken}`,
+      'User-Agent': TWITTER_UA,
+      'x-twitter-active-user': 'yes',
+      'x-twitter-auth-type': 'OAuth2Session',
+    },
+  });
+  const ct0 = res.headers.getSetCookie?.()
+    ?.find((c: string) => c.startsWith('ct0='))?.split(';')[0]?.split('=')[1];
+  if (!ct0) throw new Error('ct0 の更新に失敗しました');
+  return ct0;
+}
 
 // GraphQL query ID for CreateTweet mutation (X internal API)
 const CREATE_TWEET_QUERY_ID = 'SoVnbfCycZ7fERGCwpZkYA';

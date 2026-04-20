@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { XClient } from '@x-harness/x-sdk';
 import { createScheduledPost, getScheduledPosts, deleteScheduledPost, getXAccountById, getXAccounts, incrementApiUsage, saveQuoteTweets, getQuoteTweetsByAccount, getQuoteTweetsBySource, getLatestDiscoveredAt, recordAction, getActions, saveCollectedPosts, getCollectedPosts, deleteCollectedPost } from '@x-harness/db';
-import { createTweetWithCookies } from '../services/x-search.js';
+import { createTweetWithCookies, refreshCt0 } from '../services/x-search.js';
 import type { SaveQuoteTweetInput, SaveCollectedPostInput } from '@x-harness/db';
 import type { Env } from '../index.js';
 
@@ -65,6 +65,44 @@ posts.get('/api/posts/pending', async (c) => {
 posts.delete('/api/posts/pending/:id', async (c) => {
   await deleteCollectedPost(c.env.DB, c.req.param('id'));
   return c.json({ success: true });
+});
+
+// POST /api/posts/pending/execute — ペンディング投稿をすべて X に投稿する
+posts.post('/api/posts/pending/execute', async (c) => {
+  const { xAccountId } = await c.req.json<{ xAccountId: string }>();
+  if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
+
+  const authToken = c.env.TWITTER_AUTH_TOKEN;
+  if (!authToken) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN が未設定です' }, 500);
+
+  let ct0: string;
+  try {
+    ct0 = await refreshCt0(authToken);
+  } catch (e: any) {
+    return c.json({ success: false, error: `ct0 更新失敗: ${e.message}` }, 500);
+  }
+
+  const pending = await getCollectedPosts(c.env.DB, xAccountId, { query: 'pending_post', limit: 50 });
+  const results: { text: string; success: boolean; url?: string; error?: string }[] = [];
+
+  for (const p of pending) {
+    try {
+      const actionType = p.commentary ?? 'new';
+      const targetId = p.reply_draft ?? undefined;
+      const posted = await createTweetWithCookies(
+        p.text,
+        authToken,
+        ct0,
+        actionType === 'reply' ? { replyToId: targetId } : actionType === 'quote' ? { quoteTweetId: targetId } : {},
+      );
+      await deleteCollectedPost(c.env.DB, p.id);
+      results.push({ text: p.text.slice(0, 30), success: true, url: `https://x.com/i/status/${posted.id}` });
+    } catch (e: any) {
+      results.push({ text: p.text.slice(0, 30), success: false, error: e.message });
+    }
+  }
+
+  return c.json({ success: true, data: results });
 });
 
 posts.post('/api/posts/schedule', async (c) => {

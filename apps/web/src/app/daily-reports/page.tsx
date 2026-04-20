@@ -16,6 +16,36 @@ export default function DailyReportsPage() {
   const [replyType, setReplyType] = useState<'reply' | 'quote'>('reply')
   const [replyText, setReplyText] = useState('')
   const [posting, setPosting] = useState(false)
+  const [pendingPosts, setPendingPosts] = useState<CollectedPost[]>([])
+  const [executing, setExecuting] = useState(false)
+  const [executeResults, setExecuteResults] = useState<{ text: string; success: boolean; url?: string; error?: string }[] | null>(null)
+
+  const loadPending = useCallback(async () => {
+    if (!selectedAccountId) return
+    try {
+      const res = await api.posts.listPending(selectedAccountId)
+      if (res.success) setPendingPosts(res.data || [])
+    } catch {}
+  }, [selectedAccountId])
+
+  const handleExecutePending = async () => {
+    if (!selectedAccountId || executing) return
+    setExecuting(true)
+    setExecuteResults(null)
+    try {
+      const res = await api.posts.executePending(selectedAccountId)
+      if (res.success) {
+        setExecuteResults(res.data?.results ?? [])
+        setPendingPosts([])
+      } else {
+        alert('実行失敗: ' + ((res as any).error || 'unknown'))
+      }
+    } catch (err: any) {
+      alert('エラー: ' + err.message)
+    } finally {
+      setExecuting(false)
+    }
+  }
 
   const loadReports = useCallback(async () => {
     setLoading(true)
@@ -37,7 +67,8 @@ export default function DailyReportsPage() {
 
   useEffect(() => {
     loadReports()
-  }, [loadReports])
+    loadPending()
+  }, [loadReports, loadPending])
 
   const prepareAction = (post: CollectedPost, type: 'reply' | 'quote') => {
     setReplyTarget(post)
@@ -58,9 +89,9 @@ export default function DailyReportsPage() {
         targetTweetId: replyTarget.id,
       })
       if (res.success) {
-        alert('投稿待ちに追加しました。Claude Code で「ペンディングの投稿を実行して」と入力してください。')
         setReplyTarget(null)
         setReplyText('')
+        await loadPending()
       } else {
         alert('失敗しました: ' + ((res as any).error || 'unknown'))
       }
@@ -74,6 +105,40 @@ export default function DailyReportsPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
       <Header title="デイリーレポート" description="伊藤芳浩の視点による注目ポスト10選" />
+
+      {/* Pending Posts Banner */}
+      {(pendingPosts.length > 0 || executeResults) && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          {executeResults ? (
+            <div>
+              <p className="font-bold text-amber-800 mb-2">実行結果</p>
+              <ul className="space-y-1 text-sm">
+                {executeResults.map((r, i) => (
+                  <li key={i} className={r.success ? 'text-green-700' : 'text-red-600'}>
+                    {r.success ? '✓' : '✗'} {r.text}…
+                    {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="ml-2 underline text-blue-600">表示</a>}
+                    {r.error && <span className="ml-2 text-red-500">{r.error}</span>}
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => setExecuteResults(null)} className="mt-3 text-xs text-gray-400 hover:text-gray-600 underline">閉じる</button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <p className="text-amber-800 text-sm font-medium">
+                投稿待ち: <span className="font-bold text-amber-900">{pendingPosts.length}件</span>
+              </p>
+              <button
+                onClick={handleExecutePending}
+                disabled={executing}
+                className="bg-amber-500 text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 disabled:opacity-50 transition-all active:scale-95"
+              >
+                {executing ? '投稿中...' : '今すぐ投稿する'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Action Form */}
       {replyTarget && (
