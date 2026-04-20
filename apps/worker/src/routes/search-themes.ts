@@ -61,8 +61,15 @@ searchThemes.post('/api/search-themes/run', async (c) => {
 
   if (body.tweets && body.tweets.length > 0) {
     // MCP ローカルツールから直接ツイートが渡された場合
-    allTweets = body.tweets;
-    console.log(`[DEBUG] Using ${allTweets.length} pre-fetched tweets from request body`);
+    // テーマの最低閾値でフィルター（MCP側でもフィルター済みだが二重チェック）
+    const themes = await getActiveSearchThemes(c.env.DB);
+    const globalMinLikes = themes.length > 0 ? Math.min(...themes.map(t => t.min_likes ?? 0)) : 0;
+    const globalMinRts = themes.length > 0 ? Math.min(...themes.map(t => t.min_retweets ?? 0)) : 0;
+    allTweets = body.tweets.filter((t: any) =>
+      (t.public_metrics?.like_count ?? 0) >= globalMinLikes &&
+      (t.public_metrics?.retweet_count ?? 0) >= globalMinRts
+    );
+    console.log(`[DEBUG] Pre-fetched tweets: ${body.tweets.length} → ${allTweets.length} after filter (min_likes≥${globalMinLikes}, min_rts≥${globalMinRts})`);
   } else {
     // フォールバック: サーバーサイドでクッキー認証スクレイピング
     const authToken = c.env.TWITTER_AUTH_TOKEN;
