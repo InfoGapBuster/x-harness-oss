@@ -132,6 +132,6 @@ export async function searchTweetsWithCookies(
       reply_count: 0,
       quote_count: 0,
     },
-    created_at: t.created_at,
+    created_at: t.created_at ? new Date(t.created_at).toISOString() : new Date().toISOString(),
   }));
 }
