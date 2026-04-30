@@ -292,6 +292,8 @@ export const api = {
       fetchApi<ApiResponse<{ id: string }>>('/api/posts/pending', { method: 'POST', body: JSON.stringify(data) }),
     listPending: (xAccountId: string) =>
       fetchApi<ApiResponse<CollectedPost[]>>(`/api/posts/pending?xAccountId=${xAccountId}`),
+    cancelPending: (id: string) =>
+      fetchApi<ApiResponse<void>>(`/api/posts/pending/${id}`, { method: 'DELETE' }),
     executePending: (xAccountId: string) =>
       fetchApi<ApiResponse<{ results: { text: string; success: boolean; url?: string; error?: string }[] }>>('/api/posts/pending/execute', { method: 'POST', body: JSON.stringify({ xAccountId }) }),
     like: (tweetId: string, xAccountId: string) =>
@@ -419,6 +421,15 @@ export const api = {
     create: (data: any) => fetchApi<ApiResponse<any>>('/api/search-themes', { method: 'POST', body: JSON.stringify(data) }),
     update: (id: string, data: any) => fetchApi<ApiResponse<any>>(`/api/search-themes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id: string) => fetchApi<ApiResponse<void>>(`/api/search-themes/${id}`, { method: 'DELETE' }),
+  },
+
+  commands: {
+    create: (xAccountId: string, command: string) =>
+      fetchApi<ApiResponse<{ id: string; queued: boolean }>>('/api/commands', { method: 'POST', body: JSON.stringify({ xAccountId, command }) }),
+    listPending: (xAccountId: string) =>
+      fetchApi<ApiResponse<{ id: string; command: string; createdAt: string }[]>>(`/api/commands/pending?xAccountId=${xAccountId}`),
+    delete: (id: string) =>
+      fetchApi<ApiResponse<void>>(`/api/posts/collected/${id}`, { method: 'DELETE' }),
   },
 
   reports: {

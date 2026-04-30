@@ -18,7 +18,8 @@ export default function DailyReportsPage() {
   const [posting, setPosting] = useState(false)
   const [pendingPosts, setPendingPosts] = useState<CollectedPost[]>([])
   const [executing, setExecuting] = useState(false)
-  const [executeResults, setExecuteResults] = useState<{ text: string; success: boolean; url?: string; error?: string }[] | null>(null)
+  const [queued, setQueued] = useState<'execute' | 'report' | null>(null)
+  const [generating, setGenerating] = useState(false)
 
   const loadPending = useCallback(async () => {
     if (!selectedAccountId) return
@@ -28,22 +29,39 @@ export default function DailyReportsPage() {
     } catch {}
   }, [selectedAccountId])
 
+  const handleCancelPending = async (id: string) => {
+    try {
+      await api.posts.cancelPending(id)
+      setPendingPosts(prev => prev.filter(p => p.id !== id))
+    } catch (err: any) {
+      alert('削除エラー: ' + err.message)
+    }
+  }
+
   const handleExecutePending = async () => {
     if (!selectedAccountId || executing) return
     setExecuting(true)
-    setExecuteResults(null)
     try {
       const res = await api.posts.executePending(selectedAccountId)
-      if (res.success) {
-        setExecuteResults((res.data as any) ?? [])
-        setPendingPosts([])
-      } else {
-        alert('実行失敗: ' + ((res as any).error || 'unknown'))
-      }
+      if (res.success) setQueued('execute')
+      else alert('失敗: ' + ((res as any).error || 'unknown'))
     } catch (err: any) {
       alert('エラー: ' + err.message)
     } finally {
       setExecuting(false)
+    }
+  }
+
+  const handleGenerateReport = async () => {
+    if (!selectedAccountId || generating) return
+    setGenerating(true)
+    try {
+      await api.commands.create(selectedAccountId, 'generate_daily_report')
+      setQueued('report')
+    } catch (err: any) {
+      alert('エラー: ' + err.message)
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -107,35 +125,40 @@ export default function DailyReportsPage() {
       <Header title="デイリーレポート" description="伊藤芳浩の視点による注目ポスト10選" />
 
       {/* Pending Posts Banner */}
-      {(pendingPosts.length > 0 || executeResults) && (
+      {pendingPosts.length > 0 && (
         <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
-          {executeResults ? (
-            <div>
-              <p className="font-bold text-amber-800 mb-2">実行結果</p>
-              <ul className="space-y-1 text-sm">
-                {executeResults.map((r, i) => (
-                  <li key={i} className={r.success ? 'text-green-700' : 'text-red-600'}>
-                    {r.success ? '✓' : '✗'} {r.text}…
-                    {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="ml-2 underline text-blue-600">表示</a>}
-                    {r.error && <span className="ml-2 text-red-500">{r.error}</span>}
+          {queued === 'execute' ? (
+            <div className="flex items-center justify-between">
+              <p className="text-green-700 text-sm font-medium">指示を送信しました。10分以内に自動実行されます。</p>
+              <button onClick={() => setQueued(null)} className="text-xs text-gray-400 hover:text-gray-600 underline">閉じる</button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-amber-800 text-sm font-medium">
+                  投稿待ち: <span className="font-bold text-amber-900">{pendingPosts.length}件</span>
+                </p>
+                <button
+                  onClick={handleExecutePending}
+                  disabled={executing}
+                  className="bg-amber-500 text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 disabled:opacity-50 transition-all active:scale-95"
+                >
+                  {executing ? '送信中...' : '今すぐ投稿する'}
+                </button>
+              </div>
+              <ul className="space-y-1.5">
+                {pendingPosts.map(p => (
+                  <li key={p.id} className="flex items-start gap-2 text-sm text-amber-900 bg-amber-100 rounded-lg px-3 py-2">
+                    <span className="flex-1 line-clamp-1">{p.text}</span>
+                    <button
+                      onClick={() => handleCancelPending(p.id)}
+                      className="text-amber-500 hover:text-red-600 font-bold text-base leading-none shrink-0"
+                      title="削除"
+                    >×</button>
                   </li>
                 ))}
               </ul>
-              <button onClick={() => setExecuteResults(null)} className="mt-3 text-xs text-gray-400 hover:text-gray-600 underline">閉じる</button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <p className="text-amber-800 text-sm font-medium">
-                投稿待ち: <span className="font-bold text-amber-900">{pendingPosts.length}件</span>
-              </p>
-              <button
-                onClick={handleExecutePending}
-                disabled={executing}
-                className="bg-amber-500 text-white px-5 py-2 rounded-lg text-sm font-bold hover:bg-amber-600 disabled:opacity-50 transition-all active:scale-95"
-              >
-                {executing ? '投稿中...' : '今すぐ投稿する'}
-              </button>
-            </div>
+            </>
           )}
         </div>
       )}
@@ -177,9 +200,27 @@ export default function DailyReportsPage() {
         </div>
       )}
 
-      <div className="mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <h2 className="text-xl font-extrabold text-gray-900">今日の注目ポスト</h2>
-        <p className="text-sm text-gray-500">テーマ: ダイバーシティ、インクルージョン、人権、手話</p>
+      <div className="mb-8 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-900">今日の注目ポスト</h2>
+          <p className="text-sm text-gray-500">テーマ: ダイバーシティ、インクルージョン、人権、手話</p>
+        </div>
+        <div className="shrink-0 text-right">
+          {queued === 'report' ? (
+            <div className="text-right">
+              <p className="text-green-600 text-sm font-medium">指示を送信しました。10分以内に自動実行されます。</p>
+              <button onClick={() => setQueued(null)} className="text-xs text-gray-400 hover:text-gray-600 underline mt-1">閉じる</button>
+            </div>
+          ) : (
+            <button
+              onClick={handleGenerateReport}
+              disabled={generating || !selectedAccountId}
+              className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-all active:scale-95 shadow-sm"
+            >
+              {generating ? '送信中...' : 'レポートを生成'}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -197,7 +238,7 @@ export default function DailyReportsPage() {
       ) : reports.length === 0 ? (
         <div className="bg-white border-2 border-dashed rounded-2xl p-20 text-center text-gray-400">
           <p className="text-lg">まだレポートが生成されていません。</p>
-          <p className="text-sm mt-2">Claude Code から generate_daily_report を実行してください。</p>
+          <p className="text-sm mt-2">「レポートを生成」を押すと自動で生成されます。</p>
         </div>
       ) : (
         <div className="space-y-8">

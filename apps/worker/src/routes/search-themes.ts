@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { getActiveSearchThemes, getAllSearchThemes, createSearchTheme, updateSearchTheme, deleteSearchTheme, saveCollectedPosts, getXAccountById } from '@x-harness/db';
 import { ClaudeClient } from '@x-harness/x-sdk';
-import { searchTweetsWithCookies } from '../services/x-search.js';
 import type { Env } from '../index.js';
 
 const searchThemes = new Hono<Env>();
@@ -55,55 +54,21 @@ searchThemes.post('/api/search-themes/run', async (c) => {
   const account = await getXAccountById(c.env.DB, xAccountId);
   if (!account) return c.json({ success: false, error: 'Account not found' }, 404);
 
-  let allTweets: any[];
-
   const body = await c.req.json<{ tweets?: any[] }>().catch(() => ({}));
 
-  if (body.tweets && body.tweets.length > 0) {
-    // MCP ローカルツールから直接ツイートが渡された場合
-    // テーマの最低閾値でフィルター（MCP側でもフィルター済みだが二重チェック）
-    const themes = await getActiveSearchThemes(c.env.DB);
-    const globalMinLikes = themes.length > 0 ? Math.min(...themes.map(t => t.min_likes ?? 0)) : 0;
-    const globalMinRts = themes.length > 0 ? Math.min(...themes.map(t => t.min_retweets ?? 0)) : 0;
-    allTweets = body.tweets.filter((t: any) =>
-      (t.public_metrics?.like_count ?? 0) >= globalMinLikes &&
-      (t.public_metrics?.retweet_count ?? 0) >= globalMinRts
-    );
-    console.log(`[DEBUG] Pre-fetched tweets: ${body.tweets.length} → ${allTweets.length} after filter (min_likes≥${globalMinLikes}, min_rts≥${globalMinRts})`);
-  } else {
-    // フォールバック: サーバーサイドでクッキー認証スクレイピング
-    const authToken = c.env.TWITTER_AUTH_TOKEN;
-    const ct0 = c.env.TWITTER_CT0;
-    if (!authToken || !ct0) return c.json({ success: false, error: 'ローカルの MCP ツールから実行するか、TWITTER_AUTH_TOKEN / TWITTER_CT0 を設定してください' }, 500);
-
-    const themes = await getActiveSearchThemes(c.env.DB);
-    if (themes.length === 0) return c.json({ success: false, error: 'No active search themes' }, 400);
-
-    allTweets = [];
-    const errors: string[] = [];
-    for (const theme of themes) {
-      try {
-        const query = `${theme.query} lang:ja -filter:retweets`;
-        const tweets = await searchTweetsWithCookies(query, authToken, ct0);
-        const filtered = tweets.filter(t =>
-          (t.public_metrics?.like_count ?? 0) >= (theme.min_likes ?? 0) &&
-          (t.public_metrics?.retweet_count ?? 0) >= (theme.min_retweets ?? 0)
-        );
-        console.log(`[DEBUG] Theme "${theme.name}": ${tweets.length} tweets → ${filtered.length} after filter`);
-        allTweets.push(...filtered);
-      } catch (err: any) {
-        console.error(`[ERROR] Search failed for theme ${theme.name}:`, err.message);
-        errors.push(`${theme.name}: ${err.message}`);
-      }
-    }
-
-    if (allTweets.length === 0) {
-      const errorMsg = errors.length > 0
-        ? `ツイート取得エラー: ${errors[0]}`
-        : '条件に一致するポストが見つかりませんでした。';
-      return c.json({ success: false, error: errorMsg }, 402);
-    }
+  // 検索はローカルMCPが担当。tweets[] なしの呼び出しは受け付けない。
+  if (!body.tweets || body.tweets.length === 0) {
+    return c.json({ success: false, error: 'Claude Code の generate_daily_report ツールから実行してください（検索はローカルMCPが担当します）' }, 422);
   }
+
+  const themes = await getActiveSearchThemes(c.env.DB);
+  const globalMinLikes = themes.length > 0 ? Math.min(...themes.map(t => t.min_likes ?? 0)) : 0;
+  const globalMinRts = themes.length > 0 ? Math.min(...themes.map(t => t.min_retweets ?? 0)) : 0;
+  const allTweets = body.tweets.filter((t: any) =>
+    (t.public_metrics?.like_count ?? 0) >= globalMinLikes &&
+    (t.public_metrics?.retweet_count ?? 0) >= globalMinRts
+  );
+  console.log(`[DEBUG] Pre-fetched tweets: ${body.tweets.length} → ${allTweets.length} after filter`);
 
   // 2. Claude で分析
   const claude = new ClaudeClient(anthropicApiKey);

@@ -8,22 +8,6 @@ const TWITTER_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36';
 const CREATE_TWEET_QUERY_ID = 'SoVnbfCycZ7fERGCwpZkYA';
 
-async function refreshCt0(authToken: string): Promise<string> {
-  const res = await fetch('https://x.com/i/api/1.1/account/verify_credentials.json', {
-    headers: {
-      'Authorization': `Bearer ${TWITTER_BEARER}`,
-      'Cookie': `auth_token=${authToken}`,
-      'User-Agent': TWITTER_UA,
-      'x-twitter-active-user': 'yes',
-      'x-twitter-auth-type': 'OAuth2Session',
-    },
-  });
-  const ct0 = res.headers.getSetCookie?.()
-    ?.find(c => c.startsWith('ct0='))?.split(';')[0]?.split('=')[1];
-  if (!ct0) throw new Error('ct0 の更新に失敗しました');
-  return ct0;
-}
-
 export const tweetPostToolDefs = [
   {
     name: 'post_tweet',
@@ -58,10 +42,8 @@ async function postTweetWithScraper(
   const scraper = await getScraper();
   const cookies = await scraper.getCookies();
   const authToken = cookies.find((c: any) => c.key === 'auth_token')?.value;
-  if (!authToken) throw new Error('Twitter 認証クッキーが取得できません。TWITTER_USERNAME / TWITTER_PASSWORD を確認してください。');
-
-  // ct0 は X セッションごとに更新されるため、毎回 GET で最新値を取得する
-  const ct0 = await refreshCt0(authToken);
+  const ct0 = cookies.find((c: any) => c.key === 'ct0')?.value;
+  if (!authToken || !ct0) throw new Error('Twitter 認証クッキー (auth_token / ct0) が取得できません。');
   saveCookieCache(authToken, ct0);
 
   const tweetText = options.quoteTweetId ? `${text}\nhttps://x.com/i/status/${options.quoteTweetId}` : text;
@@ -129,8 +111,15 @@ export async function handlePostTool(name: string, a: Record<string, any>, clien
     const pending = res.data ?? [];
     if (pending.length === 0) return '投稿待ちはありません。';
 
+    // X の連投スパム検出を避けるため、複数件ある場合は投稿間に間隔を置く。
+    const POST_INTERVAL_MS = 5 * 60 * 1000;
+
     const results: string[] = [];
-    for (const p of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const p = pending[i];
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, POST_INTERVAL_MS));
+      }
       try {
         const actionType = p.commentary ?? 'new';
         const targetId = p.reply_draft || p.author_id || undefined;

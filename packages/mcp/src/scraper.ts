@@ -68,3 +68,7 @@ export async function getScraper(): Promise<Scraper> {
   _scraper = await buildAuthenticatedScraper();
   return _scraper;
 }
+
+export function resetScraper(): void {
+  _scraper = null;
+}

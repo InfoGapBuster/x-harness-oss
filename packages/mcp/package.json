@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "daemon": "node dist/daemon.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

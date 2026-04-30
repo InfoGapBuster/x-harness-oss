@@ -1,4 +1,4 @@
-import { getScraper, SearchMode } from '../scraper.js';
+import { getScraper, resetScraper, SearchMode } from '../scraper.js';
 import type { XHarnessClient } from '../client.js';
 
 export const reportToolDefs = [
@@ -33,39 +33,54 @@ export async function handleReportTool(
   if (themes.length === 0) return 'アクティブな検索テーマがありません。ダッシュボードでテーマを追加してください。';
 
   // 2. ローカルスクレイパーで各テーマを検索（閾値でフィルター）
-  const scraper = await getScraper();
   const allTweets: any[] = [];
 
-  for (const theme of themes) {
+  const searchTheme = async (scraper: Awaited<ReturnType<typeof getScraper>>, theme: typeof themes[0]): Promise<number> => {
     const query = `${theme.query} lang:ja -filter:retweets`;
     const minLikes = theme.min_likes ?? 0;
     const minRetweets = theme.min_retweets ?? 0;
+    let count = 0;
+    for await (const tweet of scraper.searchTweets(query, maxPerTheme * 3, SearchMode.Latest)) {
+      const likes = tweet.likes ?? 0;
+      const retweets = tweet.retweets ?? 0;
+      if (likes < minLikes || retweets < minRetweets) continue;
+      allTweets.push({
+        id: tweet.id ?? '',
+        text: tweet.text ?? '',
+        author_id: tweet.userId ?? '',
+        author_username: tweet.username ?? '',
+        author_display_name: tweet.name ?? '',
+        public_metrics: {
+          like_count: likes,
+          retweet_count: retweets,
+          reply_count: tweet.replies ?? 0,
+          quote_count: tweet.bookmarkCount ?? 0,
+        },
+        created_at: tweet.timeParsed?.toISOString() ?? '',
+      });
+      count++;
+      if (count >= maxPerTheme) break;
+    }
+    return count;
+  };
+
+  for (const theme of themes) {
+    const minLikes = theme.min_likes ?? 0;
+    const minRetweets = theme.min_retweets ?? 0;
     try {
-      let count = 0;
-      for await (const tweet of scraper.searchTweets(query, maxPerTheme * 3, SearchMode.Latest)) {
-        const likes = tweet.likes ?? 0;
-        const retweets = tweet.retweets ?? 0;
-        if (likes < minLikes || retweets < minRetweets) continue;
-        allTweets.push({
-          id: tweet.id ?? '',
-          text: tweet.text ?? '',
-          author_id: tweet.userId ?? '',
-          author_username: tweet.username ?? '',
-          author_display_name: tweet.name ?? '',
-          public_metrics: {
-            like_count: likes,
-            retweet_count: retweets,
-            reply_count: tweet.replies ?? 0,
-            quote_count: tweet.bookmarkCount ?? 0,
-          },
-          created_at: tweet.timeParsed?.toISOString() ?? '',
-        });
-        count++;
-        if (count >= maxPerTheme) break;
-      }
+      const scraper = await getScraper();
+      const count = await searchTheme(scraper, theme);
       console.error(`[report] "${theme.name}": ${count} 件 (min_likes≥${minLikes}, min_retweets≥${minRetweets})`);
     } catch (err: any) {
-      console.error(`[report] Search failed for theme "${theme.name}":`, err.message);
+      console.error(`[report] "${theme.name}" エラー: ${err.message} → スクレイパーリセットしてリトライ`);
+      resetScraper();
+      try {
+        const fresh = await getScraper();
+        const count = await searchTheme(fresh, theme);
+        console.error(`[report] "${theme.name}" リトライ成功: ${count} 件`);
+      } catch (retryErr: any) {
+        console.error(`[report] "${theme.name}" リトライも失敗: ${retryErr.message}`);
+      }
     }
   }
 

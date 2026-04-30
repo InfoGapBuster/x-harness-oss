@@ -67,42 +67,47 @@ posts.delete('/api/posts/pending/:id', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/posts/pending/execute — ペンディング投稿をすべて X に投稿する
+// POST /api/posts/pending/execute — 投稿指示をDBに記録（実行はローカルMCPが担当）
 posts.post('/api/posts/pending/execute', async (c) => {
   const { xAccountId } = await c.req.json<{ xAccountId: string }>();
   if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
+  const id = crypto.randomUUID();
+  await saveCollectedPosts(c.env.DB, xAccountId, '__cmd__', [{
+    id, authorId: '', text: 'execute_pending_posts',
+    createdAt: new Date().toISOString(),
+  }]);
+  return c.json({ success: true, data: { id, queued: true } });
+});
 
-  const authToken = c.env.TWITTER_AUTH_TOKEN;
-  if (!authToken) return c.json({ success: false, error: 'TWITTER_AUTH_TOKEN が未設定です' }, 500);
+// POST /api/commands — 任意コマンドをDBに記録
+posts.post('/api/commands', async (c) => {
+  const { xAccountId, command } = await c.req.json<{ xAccountId: string; command: string }>();
+  if (!xAccountId || !command) return c.json({ success: false, error: 'xAccountId, command required' }, 400);
+  const id = crypto.randomUUID();
+  await saveCollectedPosts(c.env.DB, xAccountId, '__cmd__', [{
+    id, authorId: '', text: command,
+    createdAt: new Date().toISOString(),
+  }]);
+  return c.json({ success: true, data: { id, queued: true } });
+});
 
-  let ct0: string;
+// GET /api/commands/pending — 未処理コマンド一覧
+posts.get('/api/commands/pending', async (c) => {
+  const xAccountId = c.req.query('xAccountId');
+  if (!xAccountId) return c.json({ success: false, error: 'xAccountId required' }, 400);
+  const items = await getCollectedPosts(c.env.DB, xAccountId, { query: '__cmd__', limit: 50 });
+  return c.json({ success: true, data: items.map(p => ({ id: p.id, command: p.text, createdAt: p.created_at })) });
+});
+
+// DELETE /api/commands/:id — 処理済みコマンドを削除
+posts.delete('/api/commands/:id', async (c) => {
+  const id = c.req.param('id');
   try {
-    ct0 = await refreshCt0(authToken);
-  } catch (e: any) {
-    return c.json({ success: false, error: `ct0 更新失敗: ${e.message}` }, 500);
+    await deleteCollectedPost(c.env.DB, id);
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to delete command' }, 500);
   }
-
-  const pending = await getCollectedPosts(c.env.DB, xAccountId, { query: 'pending_post', limit: 50 });
-  const results: { text: string; success: boolean; url?: string; error?: string }[] = [];
-
-  for (const p of pending) {
-    try {
-      const actionType = p.commentary ?? 'new';
-      const targetId = p.reply_draft ?? undefined;
-      const posted = await createTweetWithCookies(
-        p.text,
-        authToken,
-        ct0,
-        actionType === 'reply' ? { replyToId: targetId } : actionType === 'quote' ? { quoteTweetId: targetId } : {},
-      );
-      await deleteCollectedPost(c.env.DB, p.id);
-      results.push({ text: p.text.slice(0, 30), success: true, url: `https://x.com/i/status/${posted.id}` });
-    } catch (e: any) {
-      results.push({ text: p.text.slice(0, 30), success: false, error: e.message });
-    }
-  }
-
-  return c.json({ success: true, data: results });
 });
 
 posts.post('/api/posts/schedule', async (c) => {

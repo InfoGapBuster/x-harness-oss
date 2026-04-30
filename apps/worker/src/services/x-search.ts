@@ -96,30 +96,31 @@ export async function searchTweetsWithCookies(
   ct0: string,
   count = 20,
 ): Promise<any[]> {
-  const url = new URL('https://api.twitter.com/1.1/search/tweets.json');
+  const url = new URL('https://x.com/i/api/1.1/search/tweets.json');
   url.searchParams.set('q', query);
   url.searchParams.set('count', String(count));
   url.searchParams.set('result_type', 'recent');
   url.searchParams.set('tweet_mode', 'extended');
 
   const res = await fetch(url.toString(), {
-    headers: {
-      'Authorization': `Bearer ${TWITTER_BEARER}`,
-      'Cookie': `auth_token=${authToken}; ct0=${ct0}`,
-      'X-Csrf-Token': ct0,
-      'X-Twitter-Active-User': 'yes',
-      'X-Twitter-Auth-Type': 'OAuth2Session',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Referer': 'https://twitter.com/',
-    },
+    headers: COOKIE_HEADERS(authToken, ct0),
   });
 
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(`X 検索エラー: ${res.status} ${text.slice(0, 200)}`);
   }
+  if (!text) {
+    throw new Error('X 検索: 空のレスポンスが返されました（認証情報を確認してください）');
+  }
 
-  const data = await res.json() as { statuses?: any[] };
+  let data: { statuses?: any[] };
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`X 検索: JSONパースエラー — ${text.slice(0, 200)}`);
+  }
+
   return (data.statuses ?? []).map((t: any) => ({
     id: t.id_str,
     text: t.full_text || t.text,
